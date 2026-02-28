@@ -10,7 +10,8 @@ import torch.nn.functional as F
 from torch.nn import Embedding, Sequential, Linear, ModuleList
 import numpy as np
 
-from torch_scatter import scatter
+# from torch_scatter import scatter
+from torch_geometric.utils import scatter
 from torch_geometric.data.makedirs import makedirs
 from torch_geometric.data import download_url, extract_zip, Dataset
 from torch_geometric.nn import radius_graph, MessagePassing

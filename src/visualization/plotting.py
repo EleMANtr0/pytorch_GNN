@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 import os
 from torch_geometric.loader import DataLoader
+wn = np.load("../data/processed/wavenumber_vals_v3.npy")
 
 def plot_one_dataset(x, title, save_dir=None, rtitle=None):
     if save_dir or save_dir=="":
@@ -11,7 +12,7 @@ def plot_one_dataset(x, title, save_dir=None, rtitle=None):
         filename = f"{title}{rtitle}.png"
         save_path = save_dir / filename
         fig, ax = plt.subplots()
-        ax.plot(x, color="#ff7f0e")
+        ax.plot(wn, x, color="#ff7f0e")
         ax.set_title(title)
         ax.set_ylabel('Intensity')
         ax.set_xlabel('Raman shift (cm^-1)')
@@ -19,7 +20,7 @@ def plot_one_dataset(x, title, save_dir=None, rtitle=None):
         fig.savefig(save_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
     else:
-        plt.plot(x, color="#ff7f0e")
+        plt.plot(wn, x, color="#ff7f0e")
         plt.title(title)
         plt.ylabel('Intensity')
         plt.xlabel('Raman shift (cm^-1)')
@@ -27,13 +28,13 @@ def plot_one_dataset(x, title, save_dir=None, rtitle=None):
         plt.show()
         plt.close()
 
-def plot_spectra(pts_pred, pts_true=None, legend=True, title='',rtitle = '', save_dir = None):
+def plot_spectra(pts_pred, pts_true=None, legend=True, title='', rtitle = '', save_dir = None, verbose = True):
     plt.figure()
     plots = []
     xs_pred = [pt[0] for pt in pts_pred]
     ys_pred = [pt[1] for pt in pts_pred]
 
-    plots.append(plt.plot(xs_pred, ys_pred, label='Predicted spectrum')[0])
+    plots.append(plt.plot(xs_pred, ys_pred,"--", label='Predicted spectrum')[0])
     
     if pts_true is not None:
         xs_true = [pt[0] for pt in pts_true]
@@ -51,9 +52,11 @@ def plot_spectra(pts_pred, pts_true=None, legend=True, title='',rtitle = '', sav
         filename = f'{title}{rtitle}.png'
         save_path = os.path.join(save_dir, filename)
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    if verbose:
+        plt.show()
+    plt.close()
 
-def save_all(model, device, dataset, save_dir = None, is_schnet=False):
+def save_all(model, device, dataset, save_dir = None, is_schnet=False,verbose=True):
     model.eval()
     for i, data in enumerate(DataLoader(dataset, batch_size=1)):
         data = data.to(device)
@@ -63,11 +66,11 @@ def save_all(model, device, dataset, save_dir = None, is_schnet=False):
             pred = model(data).detach().cpu().numpy().flatten()
         true = data.y.detach().cpu().numpy().flatten()
 
-        P = [(x, p) for (x, p) in zip(range(266), pred)]
-        Y = [(x, y) for (x, y) in zip(range(266), true)]
+        P = [(x, p) for (x, p) in zip(wn, pred)]
+        Y = [(x, y) for (x, y) in zip(wn, true)]
         if isinstance(save_dir, Path):
             plot_spectra(P, Y, title=f"{data.mineral[0]}", rtitle=str(i),
-                         save_dir=save_dir)
+                         save_dir=save_dir,verbose=verbose)
         elif isinstance(save_dir, dict):
             plot_spectra(P, Y, title=f"{data.mineral[0]}", rtitle=str(i),
-                         save_dir=save_dir[round(data.wl.item() * 100)])
+                         save_dir=save_dir[round(data.wl.item() * 100)],verbose=verbose)

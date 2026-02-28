@@ -3,11 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class L1Loss(nn.L1Loss):
-    def __repr__(self):
+    def __str__(self):
         return "mae"
 
 class MSELoss(nn.MSELoss):
-    def __repr__(self):
+    def __str__(self):
         return "mse"
 
 class MSLELoss(nn.Module):
@@ -20,7 +20,7 @@ class MSLELoss(nn.Module):
         y_true = torch.clamp(y_true, min=0)
         return self.mse(torch.log1p(y_pred), torch.log1p(y_true))
 
-    def __repr__(self):
+    def __str__(self):
         return "msle"
 
 class RMSELoss(nn.Module):
@@ -31,7 +31,7 @@ class RMSELoss(nn.Module):
     def forward(self,y_pred,y_true):
         return torch.sqrt(self.mse_ls(y_pred,y_true))
 
-    def __repr__(self):
+    def __str__(self):
         return "rmse"
 
 class CosSimLoss(nn.Module):
@@ -47,7 +47,7 @@ class CosSimLoss(nn.Module):
         loss = 1 - cos_sim.mean()
         return loss
 
-    def __repr__(self):
+    def __str__(self):
         return "cossim"
 
 class IoULoss(nn.Module):
@@ -66,7 +66,7 @@ class IoULoss(nn.Module):
 
         return loss.mean()
 
-    def __repr__(self):
+    def __str__(self):
         return "iou"
 
 class KLDivLoss(nn.Module):
@@ -82,8 +82,8 @@ class KLDivLoss(nn.Module):
         kl = torch.sum(p * (log_p - log_q), dim=1)
         return kl.mean()
 
-    def __repr__(self):
-        return "kl"
+    def __str__(self):
+        return "kldiv"
 
 class CombLoss(nn.Module):
     def __init__(self,*CF):
@@ -95,7 +95,7 @@ class CombLoss(nn.Module):
         for i in self.loss:
             res += i[0] * i[1](y_pred,y_true)
         return res
-    def __repr__(self):
+    def __str__(self):
         name = ""
         for i in self.loss:
             name += str(i[0]) + repr(i[1]) + "_"
@@ -156,7 +156,7 @@ class AdaptiveCombLoss(nn.Module):
         elif self.mode == 'learnable':
             return F.softmax(self.weights, dim=0).tolist()
 
-    def __repr__(self):
+    def __str__(self):
         name = ""
         if self.mode == "dynamic":
             name = "adaptive_"

@@ -1,0 +1,21 @@
+[project]
+name = "graph12"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "==3.12.3"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "networkx>=3.6.1",
+    "numpy>=2.4.2",
+    "pandas>=3.0.0",
+    "schnetpack>=2.2.0",
+    "scikit-learn>=1.8.0",
+    "tensorboard>=2.20.0",
+    "torch>=2.10.0",
+    "torch-geometric>=2.7.0",
+    "torchmd-net>=2.6.1",
+]
+
+[tool.uv.extra-build-dependencies]
+torch-scatter = ["torch"]

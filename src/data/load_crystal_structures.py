@@ -7,14 +7,11 @@ import pandas as pd
 import sys
 
 #get dicts from periodic table
-df = pd.read_csv("../data/raw/feature_table.csv")
-# df = pd.read_csv("../data/raw/periodic_table_from_wikipedia.csv")
+df = pd.read_csv("../data/raw/feature_table2.csv")
 
 atomic_number_dict = dict(zip(df['Symbol'], df["Atomic number"]))
 atomic_weight_dict = dict(zip(df['Symbol'], df["Standard atomic weight"]))
 electronegativity_dict = dict(zip(df['Symbol'], df["Electronegativity"]))
-
-### CREATING MORE FEATURES ###
 pold_dict = dict(zip(df["Symbol"], df["pold.2"]))
 vdw_dict = dict(zip(df["Symbol"], df["vdw_radius2"]))
 at_rad_dict = dict(zip(df["Symbol"],df["at_radius"]))
@@ -51,9 +48,13 @@ def load_single_crystal_structure(file_path, min_distance_for_edge=0.001, max_di
         print("i el atomic_number atomic_weight electronegativity xyz occ Biso")
     for i,(el,xyz,occ,Biso) in enumerate(zip(atom_elements,atom_xyz_cartesian,atom_occ,atom_Biso)):
         # look up atomic number and weight
-        atomic_number = atomic_number_dict[el]
-        atomic_weight = float(atomic_weight_dict[el])
-        electronegativity = float(electronegativity_dict[el])
+        try:
+            atomic_number = atomic_number_dict[el]
+            atomic_weight = float(atomic_weight_dict[el])
+            electronegativity = float(electronegativity_dict[el])
+        except ValueError as e:
+            print(e)
+            print(el)
         vdw = float(vdw_dict[el])
         pold = float(pold_dict[el])
         at_radius = float(at_rad_dict[el])
