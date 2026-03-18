@@ -40,7 +40,7 @@ class PaiNN_raman0(nn.Module):
         atom_feats = painn_output["scalar_representation"]
 
         # pooled_feats = torch_scatter.scatter_mean(atom_feats, data.batch, dim=0)
-        pooled_feats = global_mean_pool(atom_feats, data.batch, dim=0)
+        pooled_feats = global_mean_pool(atom_feats, data.batch)
 
         output = self.head(pooled_feats)
 
@@ -48,6 +48,9 @@ class PaiNN_raman0(nn.Module):
 
     def __str__(self):
         return "painn"
+    
+    def n_params(self):
+        return sum([p.numel() for p in self.parameters()])
 
 class PaiNN_raman2(nn.Module):
     def __init__(self):
@@ -75,7 +78,7 @@ class PaiNN_raman2(nn.Module):
         painn_output = self.painn(batch)
         atom_feats = painn_output["scalar_representation"]
         # pooled = torch_scatter.scatter_mean(atom_feats, data.batch, dim=0)
-        pooled = global_mean_pool(atom_feats, data.batch, dim=0)
+        pooled = global_mean_pool(atom_feats, data.batch)
 
         if not hasattr(data,"wl"):
             wl = torch.tensor([5.14] * data.num_graphs, device=data.x.device)
@@ -89,6 +92,94 @@ class PaiNN_raman2(nn.Module):
 
     def __str__(self):
         return "painn2"
+    
+    def n_params(self):
+        return sum([p.numel() for p in self.parameters()])
+
+
+class PaiNN_raman3(nn.Module):
+    def __init__(self,args={
+        "dropout":0.3, "embedding_dimension":256, "hidden_size": 128
+    }):
+        super().__init__()
+        self.args = args
+        self.painn = PaiNN(cutoff_fn=CosineCutoff(cutoff=10),n_interactions=3,n_atom_basis=args["embedding_dimension"],radial_basis=GaussianRBF(n_rbf=30,cutoff=10))
+
+        self.wl_embed = nn.Sequential(
+            nn.Linear(1,64),
+            nn.LayerNorm(64),
+            nn.SiLU(),
+            nn.Linear(64,64)
+        )
+
+
+        self.orientation_head = nn.Sequential(
+            nn.Linear(6, 64),
+            nn.SiLU(),
+            nn.Linear(64, 6)
+        )
+
+        self.head = nn.Sequential(
+            nn.SiLU(),
+            nn.LayerNorm(args["embedding_dimension"] + 64),
+            nn.Dropout(args["dropout"]),
+            nn.Linear(args["embedding_dimension"]+64, args["hidden_size"]),
+            nn.LayerNorm(args["hidden_size"]),
+            nn.SiLU(),
+            nn.Dropout(args["dropout"]),
+            nn.Linear(args["hidden_size"], n_out*6)
+        )
+
+    def forward(self, data):
+        # data = dat.clone()
+        # data.x = drop(data.x,7)
+        batch = pyg_batch_to_schnetpack(data, cutoff=10.0)
+        painn_output = self.painn(batch)
+        atom_feats = painn_output["scalar_representation"]
+        # pooled = torch_scatter.scatter_mean(atom_feats, data.batch, dim=0)
+        pooled = global_mean_pool(atom_feats, data.batch)
+
+        if not hasattr(data,"wl"):
+            wl = torch.tensor([5.14] * data.num_graphs, device=data.x.device)
+        else:
+            wl = data.wl.view(-1,1)
+        wl_emb = self.wl_embed(wl)
+        fused = torch.cat([pooled, wl_emb], dim=-1)
+
+        raw_tensors = self.head(fused)
+        
+        batch_size = raw_tensors.shape[0]
+
+        cond_vec = data.cond_vec if hasattr(data, "cond_vec") else torch.zeros(batch_size, 7, device=raw_tensors.device)
+        mask = cond_vec[:, 0].view(batch_size, 1).to(torch.float32)
+        orientation_vec = cond_vec[:, 1:7].to(torch.float32)
+        
+        proj_weights = self.orientation_head(orientation_vec).unsqueeze(1)
+        polarized_output = (raw_tensors * proj_weights).sum(dim=-1) ** 2
+
+        R_xx = raw_tensors[:, :, 0]
+        R_yy = raw_tensors[:, :, 1]
+        R_zz = raw_tensors[:, :, 2]
+        R_xy = raw_tensors[:, :, 3]
+        R_yz = raw_tensors[:, :, 4]
+        R_xz = raw_tensors[:, :, 5]
+
+        a = (R_xx + R_yy + R_zz) / 3.0
+        gamma_sq = 0.5 * ((R_xx - R_yy)**2 + (R_yy - R_zz)**2 + (R_zz - R_xx)**2 + 6.0 * (R_xy**2 + R_yz**2 + R_xz**2))
+        
+        unpolarized_output = 45.0 * (a**2) + 7.0 * gamma_sq
+
+        output = polarized_output * mask + unpolarized_output * (1 - mask)
+        return output
+
+    def get_args(self):
+        return self.args
+    
+    def __str__(self):
+        return "painn3"
+    
+    def n_params(self):
+        return sum([p.numel() for p in self.parameters()])
 
 base_args = {
     "model": "equivariant-transformer",
@@ -189,6 +280,101 @@ class MDNet(nn.Module):
     def get_args(self):
         return self.args
     
+class MDNet1(nn.Module):
+    def __init__(self, args={}):
+        super().__init__()
+        self.args = args
+        for k, v in args.items():
+            base_args[k] = v
+        
+        args = base_args
+        self.body = TorchMD_ET(
+            hidden_channels=args["embedding_dimension"],
+            num_layers=args["num_layers"],
+            num_rbf=args["num_rbf"],
+            rbf_type=args["rbf_type"],
+            trainable_rbf=args["trainable_rbf"],
+            activation=args["activation"],
+            attn_activation=args["attn_activation"],
+            neighbor_embedding=args["neighbor_embedding"],
+            num_heads=args["num_heads"],
+            distance_influence=args["distance_influence"],
+            cutoff_lower=args["cutoff_lower"],
+            cutoff_upper=args["cutoff_upper"],
+            max_z=args["max_z"],
+            max_num_neighbors=args["max_num_neighbors"]
+        )
+
+        self.wl_emb = nn.Sequential(
+            nn.Linear(1,64),
+            nn.LayerNorm(64),
+            nn.SiLU(),
+            nn.Linear(64,64)
+        )
+
+        self.orientation_head = nn.Sequential(
+            nn.Linear(6, 64),
+            nn.SiLU(),
+            nn.Linear(64, 6)
+        )
+
+        self.head = nn.Sequential(
+            nn.Dropout(args["dropout"]),
+            nn.Linear(args["embedding_dimension"]+64, args["hidden_size"]),
+            nn.LayerNorm(args["hidden_size"]),
+            nn.SiLU(),
+            nn.Dropout(args["dropout"]),
+            nn.Linear(args["hidden_size"], n_out * 6)
+        )
+
+    def forward(self, x):
+        z = x.z
+        pos = x.pos 
+        batch = x.batch
+        wl = x.wl.view(-1,1)
+        
+        atom_feats, *_ = self.body(z, pos, batch)
+        pooled_feats = global_mean_pool(atom_feats, batch)
+
+        wl_out = self.wl_emb(wl)
+        combined_feats = torch.cat([pooled_feats,wl_out],dim=1)
+        
+        raw_tensors = self.head(combined_feats)
+        batch_size = raw_tensors.shape[0]
+        raw_tensors = raw_tensors.view(batch_size, n_out, 6)
+
+        cond_vec = x.cond_vec if hasattr(x, "cond_vec") else torch.zeros(batch_size, 7, device=raw_tensors.device)
+        
+        mask = cond_vec[:, 0].view(batch_size, 1).to(torch.float32)
+        orientation_vec = cond_vec[:, 1:7].to(torch.float32)
+        
+        proj_weights = self.orientation_head(orientation_vec).unsqueeze(1)
+        polarized_output = (raw_tensors * proj_weights).sum(dim=-1) ** 2
+
+        R_xx = raw_tensors[:, :, 0]
+        R_yy = raw_tensors[:, :, 1]
+        R_zz = raw_tensors[:, :, 2]
+        R_xy = raw_tensors[:, :, 3]
+        R_yz = raw_tensors[:, :, 4]
+        R_xz = raw_tensors[:, :, 5]
+
+        a = (R_xx + R_yy + R_zz) / 3.0
+        gamma_sq = 0.5 * ((R_xx - R_yy)**2 + (R_yy - R_zz)**2 + (R_zz - R_xx)**2 + 6.0 * (R_xy**2 + R_yz**2 + R_xz**2))
+        
+        unpolarized_output = 45.0 * (a**2) + 7.0 * gamma_sq
+
+        output = polarized_output * mask + unpolarized_output * (1 - mask)
+
+        return output
+    
+    def __str__(self):
+        return "MDNet1"
+    
+    def n_params(self):
+        return sum([p.numel() for p in self.parameters()])
+    
+    def get_args(self):
+        return self.args
 
 class MatFormer(nn.Module):
     def __init__(self, args):
@@ -262,7 +448,9 @@ class MatFormer(nn.Module):
 
 models_dict = {
     "MDNet": MDNet,
+    "MDNet1": MDNet1,
     "painn": PaiNN_raman0,
     "painn2": PaiNN_raman2,
+    "painn3": PaiNN_raman3,
     "matformer": MatFormer
 }

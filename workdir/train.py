@@ -13,7 +13,7 @@ from torch_geometric.loader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
-from src.models import MDNet, MatFormer
+from src.models import MDNet, MDNet1, MatFormer
 from src.dataset import Crystals
 from src.loss import CombLoss
 # from src.utils.util import drop  # for dropping features just to test
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     parser.add_argument("--eval_epochs", nargs="?", default=10, type=int)
     parser.add_argument("--batch_size", nargs="?", default=128, type=int)
     parser.add_argument("--val_batch_size", nargs="?", default=256, type=int)
-    parser.add_argument("--loss_fn", nargs="*", default=["mse","cossim"], type=list[str])
+    parser.add_argument("--loss_fn", nargs="*", default=["mse","cossim"], type=str)
     parser.add_argument("--lr_factor", nargs="?", default=0.3, type=float)
     parser.add_argument("--lr_patience", nargs="?", default=5, type=int)
     # parser.add_argument("--lr_decayer", nargs="?", default=None, type=list[str])
@@ -228,8 +228,8 @@ if __name__ == "__main__":
         version = VersionFromName(model_name,loss_name=loss_name)
         model = load_model(model_version=version,model_name=model_name, args=model_args)
     else:
-        # model = MDNet(model_args).to(device)
-        model = MatFormer(model_args).to(device)
+        model = MDNet1(model_args).to(device)
+        # model = MatFormer(model_args).to(device)
     dataset_path = data_path / args.dataset
 
     extractor = DatasetExtractor(DatasetContext(
@@ -256,7 +256,7 @@ if __name__ == "__main__":
         eval_epochs=args.eval_epochs,
         epoch=args.epoch, 
         val_dataset=val_dataset,
-        val_batch_size=256,
+        val_batch_size=args.val_batch_size,
         num_workers=4,
         interactive=args.inter
         )

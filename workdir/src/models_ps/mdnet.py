@@ -16,7 +16,11 @@ from torchmdnet.models.utils import (
 )
 from torchmdnet.utils import deprecated_class
 
+<<<<<<< HEAD
 class SwiGLU(nn.Module):
+=======
+class SwiGLU(nn.Module):  # custom
+>>>>>>> 93f6ddaf (raman)
     def __init__(self, in_features, hidden_features, out_features, dtype=torch.float32):
         super().__init__()
         self.w1 = nn.Linear(in_features, hidden_features, dtype=dtype)
@@ -149,6 +153,7 @@ class TorchMD_ET(nn.Module):
         act_class = act_class_mapping[activation]
 
         self.embedding = nn.Embedding(self.max_z, hidden_channels, dtype=dtype)
+        self.cond_mod = nn.Linear(7, hidden_channels * 2, dtype=dtype)  #custom
 
         self.distance = OptimizedDistance(
             cutoff_lower,
@@ -207,12 +212,16 @@ class TorchMD_ET(nn.Module):
         z: Tensor,
         pos: Tensor,
         batch: Tensor,
+        cond_vec: Optional[Tensor] = None, # custom
         box: Optional[Tensor] = None,
         q: Optional[Tensor] = None,
         s: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         x = self.embedding(z)
-
+        if cond_vec is not None:
+            cond_params = self.cond_mod(cond_vec)
+            scale, shift = cond_params.chunk(2, dim=-1)
+            x = x * scale[batch] + shift[batch]
         edge_index, edge_weight, edge_vec = self.distance(pos, batch, box)
         # This assert must be here to convince TorchScript that edge_vec is not None
         # If you remove it TorchScript will complain down below that you cannot use an Optional[Tensor]
@@ -296,7 +305,7 @@ class EquivariantMultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.hidden_channels = hidden_channels
         self.head_dim = hidden_channels // num_heads
-        self.layernorm = nn.RMSNorm(hidden_channels, dtype=dtype)
+        self.layernorm = nn.RMSNorm(hidden_channels, dtype=dtype) # custom, used to be layernorm
         self.act = activation()
         self.attn_activation = act_class_mapping[attn_activation]()
         self.cutoff = CosineCutoff(cutoff_lower, cutoff_upper)
