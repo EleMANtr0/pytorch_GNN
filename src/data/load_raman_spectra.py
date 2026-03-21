@@ -1,13 +1,17 @@
-from ..utils import qxrd_apc as apc
 import numpy as np
 from glob import glob
+import json
 import warnings
+import re
+
+from ..utils import qxrd_apc as apc
 
 def load_raman_data(
         model_wavenumber_values, #np.load(repo_file_paths.model_wavenumber_paths[version])
         raman_data_directory_path='../data/raw/raman/',
         wavelength=None,
-        verbose=False):
+        verbose=False,
+        zero_pad=True):
 
     if wavelength:
         file_paths_list = glob(raman_data_directory_path+f'*/*__{wavelength}__*.txt')
@@ -16,13 +20,15 @@ def load_raman_data(
     mineral_names = []
     raman_spectra = []
     wavelengths = []
+    orientation_vecs = []
     for fp in file_paths_list:
         with warnings.catch_warnings():
             warnings.simplefilter('error', RuntimeWarning)
             try:
-                mineral_name, wavelength, raman_spectrum = load_single_raman_spectrum(model_wavenumber_values,fp)
+                mineral_name, wavelength, raman_spectrum, orientation_vec = load_single_raman_spectrum(model_wavenumber_values,fp,zero_pad)
                 mineral_names.append(mineral_name)
                 raman_spectra.append(raman_spectrum)
+                orientation_vecs.append(orientation_vec)
                 wavelengths.append(wavelength)
             except RuntimeWarning:
                 print("runtime warning at ", fp)
@@ -34,19 +40,34 @@ def load_raman_data(
                     print("")
 
     # raman_spectra = np.vstack(raman_spectra)
-    return file_paths_list, mineral_names, raman_spectra, wavelengths
+    return file_paths_list, mineral_names, raman_spectra, wavelengths, orientation_vecs
 
-
+pattern = re.compile(r"##ORIENTATION.*?[\(\[]\s*([-\d\s\.]+)\s*[\)\]].*?[\(\[]\s*([-\d\s\.]+)\s*[\)\]]")
 def load_single_raman_spectrum(
         model_wavenumber_values, #np.load(repo_file_paths.model_wavenumber_paths[version])
-        file_path):
+        file_path,
+        zero_pad=True):
     mineral_name = file_path.split('\\')[-1].split('/')[-1].split('__')[0]
     wavelength = int(file_path.split('__Raman__')[-1].split('__')[0])
+    if "_oriented" in file_path:
+        orientation = 1
+    elif "_unoriented" in file_path:
+        orientation = 0
+    orientation_vec = [0] * 7
+    if orientation:
+        with open(file_path, "r") as f:
+            contents = f.read(3000)
+            if "##ORIENTATION" not in contents:
+                pass
+            else:
+                raw = pattern.search(contents).groups()
+                orientation_vec = [1] + [int(i) for row in raw for i in row.split(" ")]
+
     temp_apc = apc.TopLevel(file_path,twotheta_ranges=[(0.0,100000.0)],print_warnings=False)
     if 0 in temp_apc.input_profile.xy_data[1]:
         raise Exception('Model wavenumbers too broad for this spectrum. Skip.')
-    raman_spectrum = process_raman_spectrum(temp_apc.input_profile.xy_data,model_wavenumber_values)
-    return mineral_name, wavelength, raman_spectrum
+    raman_spectrum = process_raman_spectrum(temp_apc.input_profile.xy_data,model_wavenumber_values,zero_pad)
+    return mineral_name, wavelength, raman_spectrum, orientation_vec
 
 
 def process_raman_spectrum(xy,model_twotheta_values,zero_pad=True):

@@ -4,7 +4,7 @@ from numpy import cos, sin
 from glob import glob
 import networkx as nx
 import pandas as pd
-import sys
+import matplotlib.pyplot as plt
 
 #get dicts from periodic table
 df = pd.read_csv("../data/raw/feature_table2.csv")
@@ -14,7 +14,7 @@ atomic_weight_dict = dict(zip(df['Symbol'], df["Standard atomic weight"]))
 electronegativity_dict = dict(zip(df['Symbol'], df["Electronegativity"]))
 pold_dict = dict(zip(df["Symbol"], df["pold.2"]))
 vdw_dict = dict(zip(df["Symbol"], df["vdw_radius2"]))
-at_rad_dict = dict(zip(df["Symbol"],df["at_radius"]))
+at_rad_dict = dict(zip(df["Symbol"], df["at_radius"]))
 
 
 def direct_coords_to_cartesian_coords(atom_xyz_direct,cell_params):
@@ -36,7 +36,7 @@ def load_single_crystal_structure(file_path, min_distance_for_edge=0.001, max_di
     
     mineral_name = file_path.split('\\')[-1].split('/')[-1].split('0')[0]
     out = read_cif(file_path)
-    cell_params,atom_elements,atom_xyz,atom_occ,atom_Biso = out
+    cell_params,atom_elements,atom_xyz,atom_occ,atom_Biso,folds = out
     if verbose:
         print("mineral name:",mineral_name)
         print("cell parameters:",cell_params)
@@ -67,7 +67,7 @@ def load_single_crystal_structure(file_path, min_distance_for_edge=0.001, max_di
         )
         if verbose:
             print(i,el,atomic_number,atomic_weight,xyz,electronegativity,occ,Biso)
-
+    
     for i1,xyz1 in enumerate(atom_xyz_cartesian[:-1]):
         for i2,xyz2 in enumerate(atom_xyz_cartesian[i1+1:],start=i1+1):
             dist = np.linalg.norm(xyz1-xyz2)
@@ -75,10 +75,14 @@ def load_single_crystal_structure(file_path, min_distance_for_edge=0.001, max_di
                 # print(f"{dist:.2f}", end=",  ")
                 G.add_edge(i1,i2,dist=dist)
 
+    G.cell_params =  cell_params
+    G.folds = folds
+
     if verbose:
+        plt.figure(figsize=(10,10))
         drawing_labels = nx.get_node_attributes(G,'element')
         nx.draw(G,labels=drawing_labels)
-
+        plt.show()
     return mineral_name, G
 
 

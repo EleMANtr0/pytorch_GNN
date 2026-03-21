@@ -1,1 +1,5 @@
 schnetpack/
+data/raw/*
+__pycache__
+*/__pycache__
+data/raw/
