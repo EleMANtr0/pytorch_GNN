@@ -18,32 +18,37 @@ from config import n_out
 
 
 class FoldsEmb(nn.Module):
-    def __init__(self, n_in, hidden, n_out, drop=0.3):
+    def __init__(self, emb_dim, hidden, n_out, drop=0.3):
         super().__init__()
-        self.emb = nn.Embedding(n_in, hidden)
+        self.emb = nn.Embedding(7, emb_dim)
         self.head = nn.Sequential(
+            nn.Linear(emb_dim, hidden*2),
             nn.SiLU(),
-            nn.LayerNorm(),
+            nn.LayerNorm(hidden*2),
             nn.Dropout(drop),
-            nn.Linear(hidden, n_out)
+            nn.Linear(hidden*2, n_out)
         )
 
     def forward(self, x):
-        return self.emb(x).sum(-1)
+        x = self.emb(x).sum(-2)
+        return self.head(x)
 
 class WaveLenEmb(nn.Module):
-    def __init__(self, hidden, n_out, drop=0.3):
+    def __init__(self, emb_dim, hidden, n_out, drop=0.3):
         super().__init__()
+        self.register_buffer("wl_embs",torch.Tensor([5.14, 5.32, 7.8, 7.85]))
         self.emb = nn.Sequential(
-            nn.Linear(1, hidden),
+            nn.Embedding(4, emb_dim),
+            nn.Linear(emb_dim, hidden*2),
             nn.SiLU(),
-            nn.LayerNorm(),
+            nn.LayerNorm(hidden*2),
             nn.Dropout(drop),
-            nn.Linear(hidden, n_out)
+            nn.Linear(hidden*2, n_out)
         )
 
     def forward(self, x):
-        return self.emb(x)
+        idx = (x == self.wl_embs).long().argmax(dim=-1)
+        return self.emb(idx)
 
 class PaiNN_raman0(nn.Module):
     def __init__(self):
@@ -128,8 +133,8 @@ class PaiNN_raman3(nn.Module):
         self.args = args
         self.painn = PaiNN(cutoff_fn=CosineCutoff(cutoff=10),n_interactions=3,n_atom_basis=args["embedding_dimension"],radial_basis=GaussianRBF(n_rbf=30,cutoff=10))
 
-        self.wl_emb = WaveLenEmb(args["hidden_size"],64,args["dropout"])
-        self.folds_emb = FoldsEmb(4,args["hidden_size"],64,args["dropout"])
+        self.wl_emb = WaveLenEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
+        self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
         self.orientation_head = nn.Sequential(
             nn.Linear(6, 64),
             nn.SiLU(),
@@ -154,18 +159,18 @@ class PaiNN_raman3(nn.Module):
         painn_output = self.painn(batch)
         atom_feats = painn_output["scalar_representation"]
         # pooled = torch_scatter.scatter_mean(atom_feats, data.batch, dim=0)
-        pooled = global_mean_pool(atom_feats, data.batch)
 
         if not hasattr(data,"wl"):
             wl = torch.tensor([5.14] * data.num_graphs, device=data.x.device)
         else:
             wl = data.wl.view(-1,1)
         
-        wl_emb = self.wl_embed(wl)
+        pooled = global_mean_pool(atom_feats, batch)
+        wl_emb = self.wl_emb(wl)
         folds_emb = self.folds_emb(data.folds)
-        fused = torch.cat([pooled, wl_emb, folds_emb], dim=-1)
-
-        raw_tensors = self.head(fused)
+        combined = torch.cat([pooled, wl_emb, folds_emb], dim=-1)
+        
+        raw_tensors = self.head(combined)
         
         batch_size = raw_tensors.shape[0]
 
@@ -319,8 +324,8 @@ class MDNet1(nn.Module):
             max_num_neighbors=args["max_num_neighbors"]
         )
 
-        self.wl_emb = WaveLenEmb(args["hidden_size"],64,args["dropout"])
-        self.folds_emb = FoldsEmb(4,args["hidden_size"],64,args["dropout"])
+        self.wl_emb = WaveLenEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
+        self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
         self.orientation_head = nn.Sequential(
             nn.Linear(6, args["hidden_size"]),
             nn.SiLU(),
@@ -345,13 +350,12 @@ class MDNet1(nn.Module):
         folds = x.folds
         
         atom_feats, *_ = self.body(z, pos, batch)
-        pooled_feats = global_mean_pool(atom_feats, batch)
-
+        pooled = global_mean_pool(atom_feats, batch)
         wl_emb = self.wl_emb(wl)
         folds_emb = self.folds_emb(folds)
-        combined_feats = torch.cat([pooled_feats, wl_emb, folds_emb], dim=-1)
+        combined = torch.cat([pooled, wl_emb, folds_emb], dim=-1)
         
-        raw_tensors = self.head(combined_feats)
+        raw_tensors = self.head(combined)
         batch_size = raw_tensors.shape[0]
         raw_tensors = raw_tensors.view(batch_size, n_out, 6)
 

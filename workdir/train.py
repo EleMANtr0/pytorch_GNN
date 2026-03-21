@@ -191,7 +191,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", nargs="?")
 
     parser.add_argument("--model_name", nargs="?")
-    parser.add_argument("--dataset", nargs="?", default="v6.pt")
+    parser.add_argument("--dataset", nargs="?", default="v7.pt")
     parser.add_argument("--inter", nargs="?", default=True, type=bool)
 
     parser.add_argument("--n_embd", nargs="?", default=64, type=int)
