@@ -2,6 +2,17 @@ import numpy as np
 import CifFile #cif reader from https://pypi.python.org/pypi/PyCifRW/4.2.1
 # import symmmaker #wrapped fortran code for translating string matrix descriptions to matrices
 
+def parse_symop(sym_str):
+    rot = np.zeros((3, 3))
+    sym_str = sym_str.replace(' ', '').replace('-', '+-')
+    for j, s in enumerate(sym_str.split(',')):
+        terms = s.split('+')
+        for term in terms:
+            for i, axis in enumerate(['x', 'y', 'z']):
+                if axis in term:
+                    rot[j, i] = -1 if '-' in term else 1
+    return rot
+
 def read_cif(cif_file_path) :    
     mycif = CifFile.CifFile()
     myblock = CifFile.CifBlock()
@@ -16,7 +27,18 @@ def read_cif(cif_file_path) :
     # sym_array = np.zeros([num_sym,3,4])
     # for i in range(num_sym):
     #     sym_array[i,:,:] = np.array(symopmatrices[i][0])
-    
+    folds = []
+    trace_to_fold = {3: 1, -1: 2, 0: 3, 1: 4, 2: 6}
+    sym_ops = data.get('_space_group_symop_operation_xyz', [])
+
+    for op_str in sym_ops:
+        matrix = parse_symop(op_str.lower())
+        if np.isclose(np.linalg.det(matrix), 1.0):
+            trace = int(np.round(np.trace(matrix)))
+            if trace in trace_to_fold:
+                folds.append(trace_to_fold[trace])
+    folds = sorted(list(set(folds)))
+
     atom_names = np.array(data["_atom_site_label"])
     x_array = np.array(data["_atom_site_fract_x"]).astype(float)
     y_array = np.array(data["_atom_site_fract_y"]).astype(float)
@@ -115,7 +137,7 @@ def read_cif(cif_file_path) :
                 break
     
     # output = (cell_params,sym_array,atom_names,atom_xyz,atom_occ,atom_Biso)
-    output = (cell_params,atom_names,atom_xyz,atom_occ,atom_Biso)
+    # output = (cell_params,atom_names,atom_xyz,atom_occ,atom_Biso)
     # output = {
     #     "cell_params":cell_params,
     #     "atom_names":atom_names,
@@ -123,5 +145,5 @@ def read_cif(cif_file_path) :
     #     "atom_occ":atom_occ,
     #     "atom_Biso":atom_Biso,
     # }
-    
+    output = (cell_params,atom_names,atom_xyz,atom_occ,atom_Biso,folds)
     return output

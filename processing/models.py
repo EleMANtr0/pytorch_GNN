@@ -4,10 +4,10 @@ from schnetpack.representation import PaiNN
 from schnetpack.nn.cutoff import CosineCutoff
 from schnetpack.nn.radial import GaussianRBF
 from src.data.dataset import pyg_batch_to_schnetpack
-from src.models.painn import PaiNN_WL
+from src.models_ps.painn import PaiNN_WL
 import numpy as np
 import torch_geometric.nn
-from src.models.schnet import SchNet
+from src.models_ps.schnet import SchNet
 import torch_scatter
 
 model_wavenumbers = np.load('../data/processed/wavenumber_vals_v3.npy')

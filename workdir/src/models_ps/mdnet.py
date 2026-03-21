@@ -16,11 +16,7 @@ from torchmdnet.models.utils import (
 )
 from torchmdnet.utils import deprecated_class
 
-<<<<<<< HEAD
-class SwiGLU(nn.Module):
-=======
 class SwiGLU(nn.Module):  # custom
->>>>>>> 93f6ddaf (raman)
     def __init__(self, in_features, hidden_features, out_features, dtype=torch.float32):
         super().__init__()
         self.w1 = nn.Linear(in_features, hidden_features, dtype=dtype)

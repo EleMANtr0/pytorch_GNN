@@ -17,6 +17,34 @@ from src.models_ps.matformer import MatformerConfig, MatformerConv, RBFExpansion
 from config import n_out
 
 
+class FoldsEmb(nn.Module):
+    def __init__(self, n_in, hidden, n_out, drop=0.3):
+        super().__init__()
+        self.emb = nn.Embedding(n_in, hidden)
+        self.head = nn.Sequential(
+            nn.SiLU(),
+            nn.LayerNorm(),
+            nn.Dropout(drop),
+            nn.Linear(hidden, n_out)
+        )
+
+    def forward(self, x):
+        return self.emb(x).sum(-1)
+
+class WaveLenEmb(nn.Module):
+    def __init__(self, hidden, n_out, drop=0.3):
+        super().__init__()
+        self.emb = nn.Sequential(
+            nn.Linear(1, hidden),
+            nn.SiLU(),
+            nn.LayerNorm(),
+            nn.Dropout(drop),
+            nn.Linear(hidden, n_out)
+        )
+
+    def forward(self, x):
+        return self.emb(x)
+
 class PaiNN_raman0(nn.Module):
     def __init__(self):
         super().__init__()
@@ -64,12 +92,7 @@ class PaiNN_raman2(nn.Module):
             nn.Dropout(0.3),
             nn.Linear(128, n_out)
         )
-        self.wl_embed = nn.Sequential(
-            nn.Linear(1, 32),
-            nn.SiLU(),
-            nn.Dropout(0.3),
-            nn.Linear(32, 64)
-        )
+        self.wl_embed = WaveLenEmb(32,64,0.3)
 
     def forward(self, data):
         # data = dat.clone()
@@ -105,14 +128,8 @@ class PaiNN_raman3(nn.Module):
         self.args = args
         self.painn = PaiNN(cutoff_fn=CosineCutoff(cutoff=10),n_interactions=3,n_atom_basis=args["embedding_dimension"],radial_basis=GaussianRBF(n_rbf=30,cutoff=10))
 
-        self.wl_embed = nn.Sequential(
-            nn.Linear(1,64),
-            nn.LayerNorm(64),
-            nn.SiLU(),
-            nn.Linear(64,64)
-        )
-
-
+        self.wl_emb = WaveLenEmb(args["hidden_size"],64,args["dropout"])
+        self.folds_emb = FoldsEmb(4,args["hidden_size"],64,args["dropout"])
         self.orientation_head = nn.Sequential(
             nn.Linear(6, 64),
             nn.SiLU(),
@@ -121,9 +138,9 @@ class PaiNN_raman3(nn.Module):
 
         self.head = nn.Sequential(
             nn.SiLU(),
-            nn.LayerNorm(args["embedding_dimension"] + 64),
+            nn.LayerNorm(args["embedding_dimension"] + 128),
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["embedding_dimension"]+64, args["hidden_size"]),
+            nn.Linear(args["embedding_dimension"]+128, args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
@@ -133,7 +150,7 @@ class PaiNN_raman3(nn.Module):
     def forward(self, data):
         # data = dat.clone()
         # data.x = drop(data.x,7)
-        batch = pyg_batch_to_schnetpack(data, cutoff=10.0)
+        batch = pyg_batch_to_schnetpack(data, cutoff=8.0)
         painn_output = self.painn(batch)
         atom_feats = painn_output["scalar_representation"]
         # pooled = torch_scatter.scatter_mean(atom_feats, data.batch, dim=0)
@@ -143,8 +160,10 @@ class PaiNN_raman3(nn.Module):
             wl = torch.tensor([5.14] * data.num_graphs, device=data.x.device)
         else:
             wl = data.wl.view(-1,1)
+        
         wl_emb = self.wl_embed(wl)
-        fused = torch.cat([pooled, wl_emb], dim=-1)
+        folds_emb = self.folds_emb(data.folds)
+        fused = torch.cat([pooled, wl_emb, folds_emb], dim=-1)
 
         raw_tensors = self.head(fused)
         
@@ -239,12 +258,7 @@ class MDNet(nn.Module):
             max_num_neighbors=args["max_num_neighbors"]
         )
 
-        self.wl_emb = nn.Sequential(
-            nn.Linear(1,64),
-            nn.LayerNorm(64),
-            nn.ReLU(),
-            nn.Linear(64,64)
-        )
+        self.wl_emb = WaveLenEmb(64,64,0.3)
 
         self.head = nn.Sequential(
             # nn.LayerNorm(args["embedding_dimension"] + 64),
@@ -305,22 +319,18 @@ class MDNet1(nn.Module):
             max_num_neighbors=args["max_num_neighbors"]
         )
 
-        self.wl_emb = nn.Sequential(
-            nn.Linear(1,64),
-            nn.LayerNorm(64),
-            nn.SiLU(),
-            nn.Linear(64,64)
-        )
-
+        self.wl_emb = WaveLenEmb(args["hidden_size"],64,args["dropout"])
+        self.folds_emb = FoldsEmb(4,args["hidden_size"],64,args["dropout"])
         self.orientation_head = nn.Sequential(
-            nn.Linear(6, 64),
+            nn.Linear(6, args["hidden_size"]),
             nn.SiLU(),
-            nn.Linear(64, 6)
+            nn.LayerNorm(args["hidden_size"]),
+            nn.Linear(args["hidden_size"], 6)
         )
 
         self.head = nn.Sequential(
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["embedding_dimension"]+64, args["hidden_size"]),
+            nn.Linear(args["embedding_dimension"]+128, args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
@@ -332,12 +342,14 @@ class MDNet1(nn.Module):
         pos = x.pos 
         batch = x.batch
         wl = x.wl.view(-1,1)
+        folds = x.folds
         
         atom_feats, *_ = self.body(z, pos, batch)
         pooled_feats = global_mean_pool(atom_feats, batch)
 
-        wl_out = self.wl_emb(wl)
-        combined_feats = torch.cat([pooled_feats,wl_out],dim=1)
+        wl_emb = self.wl_emb(wl)
+        folds_emb = self.folds_emb(folds)
+        combined_feats = torch.cat([pooled_feats, wl_emb, folds_emb], dim=-1)
         
         raw_tensors = self.head(combined_feats)
         batch_size = raw_tensors.shape[0]

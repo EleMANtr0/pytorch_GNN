@@ -121,48 +121,6 @@ class PaiNN_raman2(Module):
     def __str__(self):
         return "painn2"
 
-
-class PaiNN_raman3(Module):
-    def __init__(self):
-        super().__init__()
-        self.painn = PaiNN_WL(
-            cutoff_fn=CosineCutoff(cutoff=10),
-            n_interactions=3,
-            n_atom_basis=256,
-            radial_basis=GaussianRBF(n_rbf=30, cutoff=10),
-            wl_embed_dim=64
-        )
-        self.head = Sequential(
-            SiLU(),
-            Dropout(0.3),
-            Linear(256, 128),
-            SiLU(),
-            Dropout(0.3),
-            Linear(128, len(model_wavenumbers))
-        )
-
-    def forward(self, data):
-        batch = pyg_batch_to_schnetpack(data, cutoff=10.0)
-
-        if hasattr(data, "wl"):
-            batch['wl'] = data.wl
-        else:
-            batch['wl'] = torch.tensor([5.14] * data.num_graphs, device=data.x.device)
-
-        batch['batch'] = data.batch
-
-        painn_output = self.painn(batch)
-        atom_feats = painn_output["scalar_representation"]
-        # pooled = torch_scatter.scatter_mean(atom_feats, data.batch, dim=0)
-        pooled = global_mean_pool(atom_feats, data.batch, dim=0)
-
-        out = self.head(pooled)
-
-        return out
-
-    def __str__(self):
-        return "painn3"
-
 class Ensemble1(Module):
     def __init__(self,path1,path2):
         super().__init__()
