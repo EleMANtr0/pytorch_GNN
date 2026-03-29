@@ -101,12 +101,11 @@ def calc_all(truths,preds,err=0):
     return acc_dict
     return (acc_dict["tp"] + acc_dict["tn"]) / sum(acc_dict.values())
 
-def kldiv(model,device,dataset,wl=None, is_schnet=False):
+def kldiv(model,device,dataloader,wl=None, is_schnet=False):
     model = model.to(device)
     loss = 0
     model.eval()
     bad = {}
-    dataloader = DataLoader(dataset,batch_size=1)
     if is_schnet:
         with torch.inference_mode():
             count = 0

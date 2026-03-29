@@ -2,6 +2,8 @@ import json
 import argparse
 from pathlib import Path
 
+from torch_geometric.loader import DataLoader
+
 
 from src.dataset import Crystals
 from src.loss import CombLoss
@@ -50,13 +52,15 @@ version = VersionFromName(model_name,loss_name=loss_name)
 model = load_model(model_version=version,model_name=model_name)
 dataset_path = data_path / args.dataset
 
-extractor = DatasetExtractor(DatasetContext(
+context = DatasetContext(
     dataset=Crystals(dataset_path),
     test_size=0.3,
     inference=False,
     seed=0
-))
+)
+extractor = DatasetExtractor(context)
 train_dataset, val_dataset, test_dataset = load_data(extractor)
+val_dataloader = DataLoader(val_dataset)
 
 predict_dir_val = cur_dir / f"predict/{args.model_name}_{loss_name}/val"
 predict_dir_val.mkdir(parents=True,exist_ok=True)
@@ -64,13 +68,16 @@ predict_dir_test = cur_dir / f"predict/{model_name}_{loss_name}/test"
 predict_dir_test.mkdir(parents=True,exist_ok=True)
 predict_dirs_test = {}
 predict_dirs_val = {}
-for i in val_dataset.wl_list:
+for i in context.dataset.wl_list:
     path = Path(str(i))
     predict_dirs_val[i] = predict_dir_val/str(i)
     predict_dirs_test[i] = predict_dir_test/str(i)
     predict_dirs_val[i].mkdir(parents=True,exist_ok=True)
     predict_dirs_test[i].mkdir(parents=True,exist_ok=True)
 
-print(kldiv(model,device,val_dataset,514)[0])
+kl_div = kldiv(model, device, val_dataloader, 514)[0]
+Path("cur_dir/predict/val/kldiv_514.txt").write_text(kl_div)
+print(kl_div)
 
-save_all(model,device,val_dataset,predict_dir_val,verbose=False)
+
+save_all(model,device,val_dataset,predict_dirs_val,verbose=False)

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol, Any
 from pathlib import Path
+import json
 
 import torch
 import torch.nn as nn
@@ -40,6 +41,7 @@ class Inference:
 class VersionFromName:
     def __init__(self, model_name, loss_name):
         self.model_version = "".join(model_name.split("_")[0])
+        self.num_params = model_name.split("_")[1]
         self.loss_name = loss_name
 
     def get_name(self):
@@ -47,13 +49,19 @@ class VersionFromName:
 
     def get_loss(self):
         return self.loss_name
+    
+    def get_params(self):
+        return self.num_params
 
 
 def load_model(model_version: VersionFromName, model_name: str, device: torch.device = "cuda", args=None):
     model_n = model_version.get_name()
     loss_name = model_version.get_loss()
-    model = models_dict[model_n](args)
+    num_params = model_version.get_params()
     model_path = models_dir / f"{model_n}_{loss_name}/{model_name}"
+    if args is None:
+        args = json.loads((model_path.parent / f"{num_params}.config").read_text())
+    model = models_dict[model_n](args)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     return model

@@ -306,11 +306,12 @@ class MDNet(nn.Module):
         return self.args
     
 class MDNet1(nn.Module):
-    def __init__(self, args={}):
+    def __init__(self, args=None):
         super().__init__()
         self.args = args
-        for k, v in args.items():
-            base_args[k] = v
+        if self.args is not None:
+            for k, v in args.items():
+                base_args[k] = v
         
         args = base_args
         self.body = TorchMD_ET(
