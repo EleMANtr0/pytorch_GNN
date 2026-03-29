@@ -237,11 +237,12 @@ base_args = {
 
 
 class MDNet(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args=None):
         super().__init__()
         self.args = args
-        for k, v in args.items():
-            base_args[k] = v
+        if args is not None:
+            for k, v in args.items():
+                base_args[k] = v
         # temp = create_model(base_args)
 
         # self.body = temp.representation_model
@@ -263,7 +264,12 @@ class MDNet(nn.Module):
             max_num_neighbors=args["max_num_neighbors"]
         )
 
-        self.wl_emb = WaveLenEmb(64,64,0.3)
+        self.wl_emb = nn.Sequential(
+            nn.Linear(1,64, bias=False),
+            nn.ReLU(),
+            nn.LayerNorm(64),
+            nn.Linear(64,64)
+        )
 
         self.head = nn.Sequential(
             # nn.LayerNorm(args["embedding_dimension"] + 64),
