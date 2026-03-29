@@ -399,7 +399,7 @@ class MDNet1(nn.Module):
     def get_args(self):
         return self.args
 
-class MDNet2(nn.Module):
+class MDNetSide(nn.Module):
     def __init__(self, args={}):
         super().__init__()
         self.args = args
@@ -426,7 +426,7 @@ class MDNet2(nn.Module):
         
         hidden_emb = 64
         self.wl_emb = WaveLenEmb(args["embedding_dimension"],args["hidden_size"],hidden_emb,args["dropout"])
-        self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],hidden_emb,args["dropout"])
+        # self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],hidden_emb,args["dropout"])
         # self.orientation_head = nn.Sequential(
         #     nn.Linear(7, args["hidden_size"]),
         #     nn.SiLU(),
@@ -448,17 +448,21 @@ class MDNet2(nn.Module):
         pos = x.pos 
         batch = x.batch
         wl = x.wl.view(-1,1)
-        folds = x.folds
+        # folds = x.folds
         batch_size = wl.shape[0]
-        cond_vec = x.cond_vec.float() if hasattr(x, "cond_vec") else torch.zeros(batch_size, 7, device=x.device).float()
+        # cond_vec = x.cond_vec.float() if hasattr(x, "cond_vec") else torch.zeros(batch_size, 7, device=x.device).float()
+        if not hasattr(x,"wl"):
+            wl = torch.tensor([5.14] * x.num_graphs, device=x.x.device)
+        else:
+            wl = x.wl.view(-1,1)
         
         atom_feats, *_ = self.body(z, pos, batch)
         pooled = global_mean_pool(atom_feats, batch)
         wl_emb = self.wl_emb(wl)
-        folds_emb = self.folds_emb(folds)
+        # folds_emb = self.folds_emb(folds)
         # orient_emb = self.orientation_head(cond_vec)
 
-        combined = torch.cat([pooled, wl_emb, folds_emb], dim=-1)
+        combined = torch.cat([pooled, wl_emb], dim=-1)
         
         raw_tensors = self.head(combined).view(batch_size, n_out, 6) ** 2
 
