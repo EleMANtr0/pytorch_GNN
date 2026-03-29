@@ -2,7 +2,7 @@ from torch_geometric.loader import DataLoader
 import numpy as np
 from scipy.signal import find_peaks, peak_widths
 import matplotlib.pyplot as plt
-from src.utils.loss import KLDivLoss
+from src.loss import KLDivLoss
 import torch
 
 kl_loss = KLDivLoss()
