@@ -6,7 +6,7 @@ from pathlib import Path
 from src.dataset import Crystals
 from src.loss import CombLoss
 # from src.utils.util import drop  # for dropping features just to test
-from config import loss_fn_dict, models_dir, data_path, logdir, tblogdir
+from config import loss_fn_dict, cur_dir, data_path
 from utils import VersionFromName, DatasetContext, DatasetExtractor, validate_device, load_model, load_data
 from src.plotting import save_all
 from src.metrics import kldiv
@@ -18,12 +18,12 @@ parser.add_argument("--loss_fn", nargs="*", default=["mse","cossim"], type=str)
 parser.add_argument("--device", nargs="?")
 parser.add_argument("--model_name", nargs="?")
 parser.add_argument("--dataset", nargs="?", default="v7.pt")
-parser.add_argument("--n_embd", nargs="?", default=64, type=int)
-parser.add_argument("--num_heads", nargs="?", default=4, type=int)
-parser.add_argument("--neighbor_emb", nargs="?", default=True, type=bool)
-parser.add_argument("--hidden", nargs="?", default=128, type=int)
-parser.add_argument("--drop", nargs="?", default=0.3, type=float)
-parser.add_argument("--num_layers", nargs="?", default=4, type=int)
+# parser.add_argument("--n_embd", nargs="?", default=64, type=int)
+# parser.add_argument("--num_heads", nargs="?", default=4, type=int)
+# parser.add_argument("--neighbor_emb", nargs="?", default=True, type=bool)
+# parser.add_argument("--hidden", nargs="?", default=128, type=int)
+# parser.add_argument("--drop", nargs="?", default=0.3, type=float)
+# parser.add_argument("--num_layers", nargs="?", default=4, type=int)
 
 args = parser.parse_args()
 
@@ -58,19 +58,19 @@ extractor = DatasetExtractor(DatasetContext(
 ))
 train_dataset, val_dataset, test_dataset = load_data(extractor)
 
-predict_dir_val = Path(f"predict/{args.model_name}_{loss_name}/val")
+predict_dir_val = cur_dir / f"predict/{args.model_name}_{loss_name}/val"
 predict_dir_val.mkdir(parents=True,exist_ok=True)
-predict_dir_test = Path(f"predict/{model_name}_{loss_name}/test")
+predict_dir_test = cur_dir / f"predict/{model_name}_{loss_name}/test"
 predict_dir_test.mkdir(parents=True,exist_ok=True)
 predict_dirs_test = {}
 predict_dirs_val = {}
 for i in val_dataset.wl_list:
     path = Path(str(i))
-    predict_dirs_val[i] = predict_dir_val/path
-    predict_dirs_test[i] = predict_dir_test/path
+    predict_dirs_val[i] = predict_dir_val/str(i)
+    predict_dirs_test[i] = predict_dir_test/str(i)
     predict_dirs_val[i].mkdir(parents=True,exist_ok=True)
     predict_dirs_test[i].mkdir(parents=True,exist_ok=True)
 
 print(kldiv(model,device,val_dataset,514)[0])
 
-save_all(model,device,val_dataset)
+save_all(model,device,val_dataset,predict_dir_val,verbose=False)
