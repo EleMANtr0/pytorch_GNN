@@ -63,7 +63,7 @@ class Trainer:
     val_dataset: Crystals = None
     val_batch_size: int = 256
     num_workers: int = 4
-    interactive:bool = True
+    interactive: bool = True
 
     def __post_init__(self):
         self.model = self.model.to(self.device)

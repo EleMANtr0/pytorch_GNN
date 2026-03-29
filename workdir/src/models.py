@@ -422,23 +422,24 @@ class MDNet2(nn.Module):
             max_z=args["max_z"],
             max_num_neighbors=args["max_num_neighbors"]
         )
-
-        self.wl_emb = WaveLenEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
-        self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
-        self.orientation_head = nn.Sequential(
-            nn.Linear(8, args["hidden_size"]),
-            nn.SiLU(),
-            nn.LayerNorm(args["hidden_size"]),
-            nn.Linear(args["hidden_size"], 64)
-        )
+        
+        hidden_emb = 64
+        self.wl_emb = WaveLenEmb(args["embedding_dimension"],args["hidden_size"],hidden_emb,args["dropout"])
+        self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],hidden_emb,args["dropout"])
+        # self.orientation_head = nn.Sequential(
+        #     nn.Linear(7, args["hidden_size"]),
+        #     nn.SiLU(),
+        #     nn.LayerNorm(args["hidden_size"]),
+        #     nn.Linear(args["hidden_size"], hidden_emb)
+        # )
 
         self.head = nn.Sequential(
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["embedding_dimension"]+192, args["hidden_size"]),
+            nn.Linear(args["embedding_dimension"] + hidden_emb*2, args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["hidden_size"], n_out)
+            nn.Linear(args["hidden_size"], n_out * 6)
         )
 
     def forward(self, x):
@@ -447,20 +448,32 @@ class MDNet2(nn.Module):
         batch = x.batch
         wl = x.wl.view(-1,1)
         folds = x.folds
-        
-        cond_vec = x.cond_vec.float() if hasattr(x, "cond_vec") else torch.zeros(batch_size, 7, device=raw_tensors.device).float()
-        mask_inv = 1 - cond_vec[:, 0:1]
-        cond_vec = torch.cat([cond_vec, mask_inv], axis=-1)
+        batch_size = wl.shape[0]
+        cond_vec = x.cond_vec.float() if hasattr(x, "cond_vec") else torch.zeros(batch_size, 7, device=x.device).float()
         
         atom_feats, *_ = self.body(z, pos, batch)
         pooled = global_mean_pool(atom_feats, batch)
         wl_emb = self.wl_emb(wl)
         folds_emb = self.folds_emb(folds)
-        orient_emb = self.orientation_head(cond_vec)
+        # orient_emb = self.orientation_head(cond_vec)
 
-        combined = torch.cat([pooled, wl_emb, folds_emb, orient_emb], dim=-1)
+        combined = torch.cat([pooled, wl_emb, folds_emb], dim=-1)
         
-        return self.head(combined)
+        raw_tensors = self.head(combined).view(batch_size, n_out, 6) ** 2
+
+        R_xx = raw_tensors[:, :, 0]
+        R_yy = raw_tensors[:, :, 1]
+        R_zz = raw_tensors[:, :, 2]
+        R_xy = raw_tensors[:, :, 3]
+        R_yz = raw_tensors[:, :, 4]
+        R_xz = raw_tensors[:, :, 5]
+
+        a = (R_xx + R_yy + R_zz) / 3.0
+        gamma_sq = 0.5 * ((R_xx - R_yy)**2 + (R_yy - R_zz)**2 + (R_zz - R_xx)**2 + 6.0 * (R_xy**2 + R_yz**2 + R_xz**2))
+        
+        output = 45.0 * (a**2) + 7.0 * gamma_sq
+
+        return output
     
     def __str__(self):
         return "MDNet2"
