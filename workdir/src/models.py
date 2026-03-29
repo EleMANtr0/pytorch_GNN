@@ -398,9 +398,80 @@ class MDNet1(nn.Module):
     def get_args(self):
         return self.args
 
-class MatFormer(nn.Module):
-    def __init__(self, args):
+class MDNet2(nn.Module):
+    def __init__(self, args={}):
         super().__init__()
+        self.args = args
+        for k, v in args.items():
+            base_args[k] = v
+        
+        args = base_args
+        self.body = TorchMD_ET(
+            hidden_channels=args["embedding_dimension"],
+            num_layers=args["num_layers"],
+            num_rbf=args["num_rbf"],
+            rbf_type=args["rbf_type"],
+            trainable_rbf=args["trainable_rbf"],
+            activation=args["activation"],
+            attn_activation=args["attn_activation"],
+            neighbor_embedding=args["neighbor_embedding"],
+            num_heads=args["num_heads"],
+            distance_influence=args["distance_influence"],
+            cutoff_lower=args["cutoff_lower"],
+            cutoff_upper=args["cutoff_upper"],
+            max_z=args["max_z"],
+            max_num_neighbors=args["max_num_neighbors"]
+        )
+
+        self.wl_emb = WaveLenEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
+        self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
+        self.orientation_head = nn.Sequential(
+            nn.Linear(7, args["hidden_size"]),
+            nn.SiLU(),
+            nn.LayerNorm(args["hidden_size"]),
+            nn.Linear(args["hidden_size"], 7)
+        )
+
+        self.head = nn.Sequential(
+            nn.Dropout(args["dropout"]),
+            nn.Linear(args["embedding_dimension"]+192, args["hidden_size"]),
+            nn.LayerNorm(args["hidden_size"]),
+            nn.SiLU(),
+            nn.Dropout(args["dropout"]),
+            nn.Linear(args["hidden_size"], n_out)
+        )
+
+    def forward(self, x):
+        z = x.z
+        pos = x.pos 
+        batch = x.batch
+        wl = x.wl.view(-1,1)
+        folds = x.folds
+        
+        cond_vec = x.cond_vec.float() if hasattr(x, "cond_vec") else torch.zeros(batch_size, 7, device=raw_tensors.device).float()
+        
+        atom_feats, *_ = self.body(z, pos, batch)
+        pooled = global_mean_pool(atom_feats, batch)
+        wl_emb = self.wl_emb(wl)
+        folds_emb = self.folds_emb(folds)
+        orient_emb = self.orientation_head(cond_vec)
+
+        combined = torch.cat([pooled, wl_emb, folds_emb, orient_emb], dim=-1)
+        
+        return self.head(combined)
+    
+    def __str__(self):
+        return "MDNet2"
+    
+    def n_params(self):
+        return sum([p.numel() for p in self.parameters()])
+    
+    def get_args(self):
+        return self.args
+
+
+class MatFormer(nn.Module):
+    def __init__(self, args): super().__init__()
         
         config = MatformerConfig()
         for k, v in args.items():
@@ -471,6 +542,7 @@ class MatFormer(nn.Module):
 models_dict = {
     "MDNet": MDNet,
     "MDNet1": MDNet1,
+    "MDNet2": MDNet2,
     "painn": PaiNN_raman0,
     "painn2": PaiNN_raman2,
     "painn3": PaiNN_raman3,

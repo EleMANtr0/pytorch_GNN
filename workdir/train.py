@@ -13,7 +13,7 @@ from torch_geometric.loader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
-from src.models import MDNet, MDNet1, MatFormer
+from src.models import MDNet, MDNet1, MDNet2
 from src.dataset import Crystals
 from src.loss import CombLoss
 # from src.utils.util import drop  # for dropping features just to test
@@ -228,7 +228,7 @@ if __name__ == "__main__":
         version = VersionFromName(model_name,loss_name=loss_name)
         model = load_model(model_version=version,model_name=model_name, args=model_args)
     else:
-        model = MDNet1(model_args).to(device)
+        model = MDNet2(model_args).to(device)
         # model = MatFormer(model_args).to(device)
     dataset_path = data_path / args.dataset
 
