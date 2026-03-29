@@ -60,7 +60,7 @@ context = DatasetContext(
 )
 extractor = DatasetExtractor(context)
 train_dataset, val_dataset, test_dataset = load_data(extractor)
-val_dataloader = DataLoader(val_dataset)
+val_dataloader = DataLoader(val_dataset, batch_size=128)
 
 predict_dir_val = cur_dir / f"predict/{args.model_name}_{loss_name}/val"
 predict_dir_val.mkdir(parents=True,exist_ok=True)
