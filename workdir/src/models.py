@@ -426,10 +426,10 @@ class MDNet2(nn.Module):
         self.wl_emb = WaveLenEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
         self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
         self.orientation_head = nn.Sequential(
-            nn.Linear(7, args["hidden_size"]),
+            nn.Linear(8, args["hidden_size"]),
             nn.SiLU(),
             nn.LayerNorm(args["hidden_size"]),
-            nn.Linear(args["hidden_size"], 7)
+            nn.Linear(args["hidden_size"], 64)
         )
 
         self.head = nn.Sequential(
@@ -449,6 +449,8 @@ class MDNet2(nn.Module):
         folds = x.folds
         
         cond_vec = x.cond_vec.float() if hasattr(x, "cond_vec") else torch.zeros(batch_size, 7, device=raw_tensors.device).float()
+        mask_inv = 1 - cond_vec[:, 0:1]
+        cond_vec = torch.cat([cond_vec, mask_inv], axis=-1)
         
         atom_feats, *_ = self.body(z, pos, batch)
         pooled = global_mean_pool(atom_feats, batch)
@@ -471,7 +473,8 @@ class MDNet2(nn.Module):
 
 
 class MatFormer(nn.Module):
-    def __init__(self, args): super().__init__()
+    def __init__(self, args): 
+        super().__init__()
         
         config = MatformerConfig()
         for k, v in args.items():
