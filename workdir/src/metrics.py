@@ -123,7 +123,7 @@ def kldiv(model,device,dataloader,wl=None, is_schnet=False):
         with torch.inference_mode():
             count = 0
             for i, data in enumerate(dataloader):
-                if round(100*data.wl.item()) in wl:
+                if all([100 * Wl.item() in wl for Wl in data.wl]):
                     data.to(device)
                     pred = model(data)
                     curr_loss = kl_loss(pred, data.y)
