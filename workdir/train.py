@@ -13,7 +13,7 @@ from torch_geometric.loader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
-from src.models import MDNet, MDNet1, MDNetSide
+from src.models import MDNet, MDNet1, MDNetSide, models_dict
 from src.dataset import Crystals
 from src.loss import CombLoss
 # from src.utils.util import drop  # for dropping features just to test
@@ -191,7 +191,8 @@ if __name__ == "__main__":
     parser.add_argument("--device", nargs="?")
 
     parser.add_argument("--model_name", nargs="?")
-    parser.add_argument("--dataset", nargs="?", default="v7.pt")
+    parser.add_argument("--model_version", nargs="?")
+    parser.add_argument("--dataset", nargs="?", default="v8.pt")
     parser.add_argument("--inter", nargs="?", default=True)
 
     parser.add_argument("--n_embd", nargs="?", default=64, type=int)
@@ -225,12 +226,13 @@ if __name__ == "__main__":
         loss_fn = CombLoss(*[(1, loss_fn_dict[loss]) for loss in losses])
     loss_name = str(loss_fn)
 
-    if model_name is not None:
+    if args.model_version is not None:
+        model = models_dict[args.model_version](model_args).to(device)
+    elif model_name is not None:
         version = VersionFromName(model_name,loss_name=loss_name)
         model = load_model(model_version=version,model_name=model_name, args=model_args)
     else:
-        model = MDNetSide(model_args).to(device)
-        # model = MatFormer(model_args).to(device)
+        model = MDNet1(model_args).to(device)
     dataset_path = data_path / args.dataset
 
     extractor = DatasetExtractor(DatasetContext(

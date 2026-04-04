@@ -1,20 +1,16 @@
-from dataclasses import dataclass
-from typing import Literal
 
 import torch
-from schnetpack.representation import PaiNN
+import torch.nn as nn
+from config import n_out
 from schnetpack.nn.cutoff import CosineCutoff
 from schnetpack.nn.radial import GaussianRBF
+from schnetpack.representation import PaiNN
 from torch_geometric.nn import global_mean_pool
-import torch.nn as nn
 from torch_scatter import scatter
 
 from src.dataset import pyg_batch_to_schnetpack
-from src.models_ps.painn import PaiNN_WL
-from src.models_ps.schnet import SchNet
-from src.models_ps.mdnet import TorchMD_ET
 from src.models_ps.matformer import MatformerConfig, MatformerConv, RBFExpansion
-from config import n_out
+from src.models_ps.mdnet import TorchMD_ET
 
 
 class FoldsEmb(nn.Module):
@@ -31,6 +27,7 @@ class FoldsEmb(nn.Module):
 
     def forward(self, x):
         x = self.emb(x).sum(-2)
+        # x =  self.emb(x).mean(-2)
         return self.head(x)
 
 class WaveLenEmb(nn.Module):
@@ -331,18 +328,19 @@ class MDNet1(nn.Module):
             max_num_neighbors=args["max_num_neighbors"]
         )
 
-        self.wl_emb = WaveLenEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
-        self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],64,args["dropout"])
+        hidden_emb = 64
+        self.wl_emb = WaveLenEmb(args["embedding_dimension"],args["hidden_size"],hidden_emb,args["dropout"])
+        self.folds_emb = FoldsEmb(args["embedding_dimension"],args["hidden_size"],hidden_emb,args["dropout"])
         self.orientation_head = nn.Sequential(
-            nn.Linear(6, args["hidden_size"]),
+            nn.Linear(7, args["hidden_size"]),
             nn.SiLU(),
             nn.LayerNorm(args["hidden_size"]),
-            nn.Linear(args["hidden_size"], 6)
+            nn.Linear(args["hidden_size"], hidden_emb)
         )
 
         self.head = nn.Sequential(
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["embedding_dimension"]+128, args["hidden_size"]),
+            nn.Linear(args["embedding_dimension"]+hidden_emb*3, args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
@@ -354,25 +352,24 @@ class MDNet1(nn.Module):
         pos = x.pos 
         batch = x.batch
         wl = x.wl.view(-1,1)
-        folds = x.folds
+        batch_size = wl.shape[0]
+        if hasattr(x, "folds"):
+            folds = x.folds  
+        else:
+            folds = torch.zeros(batch_size, 4, device=wl.device).long()
+            folds[:,-1] = 1
         
         atom_feats, *_ = self.body(z, pos, batch)
         pooled = global_mean_pool(atom_feats, batch)
         wl_emb = self.wl_emb(wl)
         folds_emb = self.folds_emb(folds)
-        combined = torch.cat([pooled, wl_emb, folds_emb], dim=-1)
-        
-        raw_tensors = self.head(combined)
-        batch_size = raw_tensors.shape[0]
-        raw_tensors = raw_tensors.view(batch_size, n_out, 6)
 
-        cond_vec = x.cond_vec if hasattr(x, "cond_vec") else torch.zeros(batch_size, 7, device=raw_tensors.device)
+        cond_vec = x.cond_vec if hasattr(x, "cond_vec") else torch.zeros(batch_size, 7, device=wl.device)
+        cond_vec[:, 0] = 1 - cond_vec[:, 0]
+        orient_emb = self.orientation_head(cond_vec)
+        combined = torch.cat([pooled, wl_emb, folds_emb, orient_emb], dim=-1)
         
-        mask = cond_vec[:, 0].view(batch_size, 1).to(torch.float32)
-        orientation_vec = cond_vec[:, 1:7].to(torch.float32)
-        
-        proj_weights = self.orientation_head(orientation_vec).unsqueeze(1)
-        polarized_output = (raw_tensors * proj_weights).sum(dim=-1) ** 2
+        raw_tensors = self.head(combined).view(batch_size, n_out, 6) ** 2
 
         R_xx = raw_tensors[:, :, 0]
         R_yy = raw_tensors[:, :, 1]
@@ -384,9 +381,7 @@ class MDNet1(nn.Module):
         a = (R_xx + R_yy + R_zz) / 3.0
         gamma_sq = 0.5 * ((R_xx - R_yy)**2 + (R_yy - R_zz)**2 + (R_zz - R_xx)**2 + 6.0 * (R_xy**2 + R_yz**2 + R_xz**2))
         
-        unpolarized_output = 45.0 * (a**2) + 7.0 * gamma_sq
-
-        output = polarized_output * mask + unpolarized_output * (1 - mask)
+        output = 45.0 * (a**2) + 7.0 * gamma_sq
 
         return output
     
@@ -436,7 +431,7 @@ class MDNetSide(nn.Module):
 
         self.head = nn.Sequential(
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["embedding_dimension"] + hidden_emb*2, args["hidden_size"]),
+            nn.Linear(args["embedding_dimension"] + hidden_emb, args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
@@ -481,7 +476,7 @@ class MDNetSide(nn.Module):
         return output
     
     def __str__(self):
-        return "MDNet2"
+        return "MDNetSide"
     
     def n_params(self):
         return sum([p.numel() for p in self.parameters()])
