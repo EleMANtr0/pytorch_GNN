@@ -21,15 +21,17 @@ def load_raman_data(
     raman_spectra = []
     wavelengths = []
     orientation_vecs = []
+    raman_ids = []
     for fp in file_paths_list:
         with warnings.catch_warnings():
             warnings.simplefilter('error', RuntimeWarning)
             try:
-                mineral_name, wavelength, raman_spectrum, orientation_vec = load_single_raman_spectrum(model_wavenumber_values,fp,zero_pad)
+                mineral_name, rruff_id, wavelength, raman_spectrum, orientation_vec = load_single_raman_spectrum(model_wavenumber_values,fp,zero_pad)
                 mineral_names.append(mineral_name)
                 raman_spectra.append(raman_spectrum)
                 orientation_vecs.append(orientation_vec)
                 wavelengths.append(wavelength)
+                raman_ids.append(rruff_id)
             except RuntimeWarning:
                 print("runtime warning at ", fp)
                 continue
@@ -40,7 +42,7 @@ def load_raman_data(
                     print("")
 
     # raman_spectra = np.vstack(raman_spectra)
-    return file_paths_list, mineral_names, raman_spectra, wavelengths, orientation_vecs
+    return file_paths_list, raman_ids, mineral_names, raman_spectra, wavelengths, orientation_vecs
 
 pattern = re.compile(r"##ORIENTATION.*?[\(\[]\s*([-\d\s\.]+)\s*[\)\]].*?[\(\[]\s*([-\d\s\.]+)\s*[\)\]]")
 def load_single_raman_spectrum(
@@ -48,6 +50,7 @@ def load_single_raman_spectrum(
         file_path,
         zero_pad=True):
     mineral_name = file_path.split('\\')[-1].split('/')[-1].split('__')[0]
+    rruff_id = file_path.split('__')[-1].replace('.txt', '')
     wavelength = int(file_path.split('__Raman__')[-1].split('__')[0])
     if "_oriented" in file_path:
         orientation = 1
@@ -67,7 +70,7 @@ def load_single_raman_spectrum(
     if 0 in temp_apc.input_profile.xy_data[1]:
         raise Exception('Model wavenumbers too broad for this spectrum. Skip.')
     raman_spectrum = process_raman_spectrum(temp_apc.input_profile.xy_data,model_wavenumber_values,zero_pad)
-    return mineral_name, wavelength, raman_spectrum, orientation_vec
+    return mineral_name, rruff_id, wavelength, raman_spectrum, orientation_vec
 
 
 def process_raman_spectrum(xy,model_twotheta_values,zero_pad=True):

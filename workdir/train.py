@@ -13,7 +13,7 @@ from torch_geometric.loader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
-from src.models import MDNet, MDNet1, MDNet2
+from src.models import MDNet, MDNet1, MDNetSide
 from src.dataset import Crystals
 from src.loss import CombLoss
 # from src.utils.util import drop  # for dropping features just to test
@@ -192,7 +192,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--model_name", nargs="?")
     parser.add_argument("--dataset", nargs="?", default="v7.pt")
-    parser.add_argument("--inter", nargs="?", default=True, type=bool)
+    parser.add_argument("--inter", nargs="?", default=True)
 
     parser.add_argument("--n_embd", nargs="?", default=64, type=int)
     parser.add_argument("--num_heads", nargs="?", default=4, type=int)
@@ -203,6 +203,7 @@ if __name__ == "__main__":
     
 
     args = parser.parse_args()
+    args.inter = args.inter == "True"
     logger = Logger(interactive=args.inter)
     device = validate_device(args.device)
     logger.log(f"using {device}")
@@ -228,7 +229,7 @@ if __name__ == "__main__":
         version = VersionFromName(model_name,loss_name=loss_name)
         model = load_model(model_version=version,model_name=model_name, args=model_args)
     else:
-        model = MDNet2(model_args).to(device)
+        model = MDNetSide(model_args).to(device)
         # model = MatFormer(model_args).to(device)
     dataset_path = data_path / args.dataset
 

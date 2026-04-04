@@ -563,7 +563,7 @@ class MatFormer(nn.Module):
 models_dict = {
     "MDNet": MDNet,
     "MDNet1": MDNet1,
-    "MDNet2": MDNet2,
+    "MDNetSide": MDNetSide,
     "painn": PaiNN_raman0,
     "painn2": PaiNN_raman2,
     "painn3": PaiNN_raman3,
