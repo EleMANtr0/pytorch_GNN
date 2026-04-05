@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 #get dicts from periodic table
-df = pd.read_csv("../data/raw/feature_table2.csv")
+df = pd.read_csv("data/raw/feature_table2.csv")
 
 atomic_number_dict = dict(zip(df['Symbol'], df["Atomic number"]))
 atomic_weight_dict = dict(zip(df['Symbol'], df["Standard atomic weight"]))

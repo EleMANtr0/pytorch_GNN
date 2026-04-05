@@ -7,8 +7,8 @@ import re
 from ..utils import qxrd_apc as apc
 
 def load_raman_data(
-        model_wavenumber_values, #np.load(repo_file_paths.model_wavenumber_paths[version])
-        raman_data_directory_path='../data/raw/raman/',
+        model_wavenumber_values,
+        raman_data_directory_path='data/raw/raman/',
         wavelength=None,
         verbose=False,
         zero_pad=True):
@@ -41,16 +41,19 @@ def load_raman_data(
                     print(f"problem file: {fp}")
                     print("")
 
-    # raman_spectra = np.vstack(raman_spectra)
     return file_paths_list, raman_ids, mineral_names, raman_spectra, wavelengths, orientation_vecs
 
 pattern = re.compile(r"##ORIENTATION.*?[\(\[]\s*([-\d\s\.]+)\s*[\)\]].*?[\(\[]\s*([-\d\s\.]+)\s*[\)\]]")
+
 def load_single_raman_spectrum(
-        model_wavenumber_values, #np.load(repo_file_paths.model_wavenumber_paths[version])
+        model_wavenumber_values,
         file_path,
         zero_pad=True):
     mineral_name = file_path.split('\\')[-1].split('/')[-1].split('__')[0]
-    rruff_id = file_path.split('__')[-1].replace('.txt', '')
+    
+    raw_id_part = file_path.split('__')[-1]
+    rruff_id = raw_id_part.split('-')[0].replace('.txt', '')
+    
     wavelength = int(file_path.split('__Raman__')[-1].split('__')[0])
     if "_oriented" in file_path:
         orientation = 1
@@ -80,3 +83,30 @@ def process_raman_spectrum(xy,model_twotheta_values,zero_pad=True):
         intensity_interpolated = np.interp(model_twotheta_values,xy[0],xy[1])
     intensity_normalized = np.multiply(intensity_interpolated,1.0/np.max(intensity_interpolated))
     return intensity_normalized
+
+
+def load_ir_data(ir_dir, ir_wavenumbers):
+    ir_dict_id = {}
+    ir_dict_name = {}
+    for fp in glob(ir_dir + '*/*.txt'):
+        try:
+            filename = fp.split('\\')[-1].split('/')[-1]
+            mineral_name = filename.split('__')[0]
+            
+            if '__' in filename:
+                base_id = filename.split('__')[-1].split('-')[0].replace('.txt', '')
+            else:
+                base_id = filename.split('-')[0].replace('.txt', '')
+                
+            if not base_id.startswith('R'):
+                base_id = 'R' + base_id
+            
+            temp_apc = apc.TopLevel(fp, twotheta_ranges=[(0.0, 100000.0)], print_warnings=False)
+            ir_spectrum = process_raman_spectrum(temp_apc.input_profile.xy_data, ir_wavenumbers, True)
+            
+            if base_id:
+                ir_dict_id[base_id] = ir_spectrum
+            ir_dict_name[mineral_name] = ir_spectrum
+        except:
+            pass
+    return ir_dict_id, ir_dict_name
