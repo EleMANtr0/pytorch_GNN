@@ -236,7 +236,7 @@ if __name__ == "__main__":
     dataset_path = data_path / args.dataset
 
     extractor = DatasetExtractor(DatasetContext(
-        dataset=Crystals(dataset_path),
+        dataset=Crystals(dataset_path, [514, 532, 780, 785]),
         test_size=0.3,
         inference=False,
         seed=0

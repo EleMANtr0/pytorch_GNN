@@ -26,8 +26,8 @@ class FoldsEmb(nn.Module):
         )
 
     def forward(self, x):
-        x = self.emb(x).sum(-2)
-        # x =  self.emb(x).mean(-2)
+        # x = self.emb(x).sum(-2)
+        x =  self.emb(x).mean(-2)
         return self.head(x)
 
 class WaveLenEmb(nn.Module):

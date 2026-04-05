@@ -57,7 +57,7 @@ model = load_model(model_version=version, model_name=model_name)
 dataset_path = data_path / args.dataset
 
 context = DatasetContext(
-    dataset=Crystals(dataset_path), test_size=0.3, inference=False, seed=0
+    dataset=Crystals(dataset_path, [514, 532, 780, 785]), test_size=0.3, inference=False, seed=0
 )
 extractor = DatasetExtractor(context)
 train_dataset, val_dataset, test_dataset = load_data(extractor)
