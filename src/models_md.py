@@ -254,7 +254,7 @@ class MDNet2(nn.Module):
 
         self.ir_head = nn.Sequential(
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["embedding_dimension"], args["hidden_size"]),
+            nn.Linear(args["hidden_size"], args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
