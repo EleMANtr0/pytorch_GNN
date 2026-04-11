@@ -28,7 +28,7 @@ base_args = {
     "activation": "silu",
     "cutoff_lower": 0.0,
     "max_z": 100,
-    "max_num_neighbors": 192,
+    "max_num_neighbors": 256,
     "aggr": "add",
     "derivative": False,
     "atom_filter": -1,

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch_geometric.nn import global_mean_pool
+import torch.nn.functional as F
 
 from config import base_args, n_out
 from src.models_raw.mdnet import TorchMD_ET
@@ -270,7 +271,7 @@ class MDNet2(nn.Module):
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["hidden_size"], n_out * 6),
+            nn.Linear(args["hidden_size"], n_out * 7),
         )
 
         self.ir_head = nn.Sequential(
@@ -324,7 +325,7 @@ class MDNet2(nn.Module):
         return output
 
     def raman(self, x):
-        raw_tensors = self.raman_head(x).view(x.shape[0], n_out, 6)
+        raw_tensors = self.raman_head(x).view(x.shape[0], n_out, 7)
 
         R_xx = raw_tensors[:, :, 0]
         R_yy = raw_tensors[:, :, 1]
@@ -332,6 +333,7 @@ class MDNet2(nn.Module):
         R_xy = raw_tensors[:, :, 3]
         R_yz = raw_tensors[:, :, 4]
         R_xz = raw_tensors[:, :, 5]
+        bg = raw_tensors[:, :, 6]
 
         a = (R_xx + R_yy + R_zz) / 3.0
         gamma_sq = 0.5 * (
@@ -342,7 +344,9 @@ class MDNet2(nn.Module):
         )
 
         output = 45.0 * (a**2) + 7.0 * gamma_sq
+        background = F.softplus(bg)
         output = output / output.max(dim=-1, keepdim=True)[0]
+        output = output + background
 
         # scale = 100 * self.raman_scale(raw_tensors[:, :, 6])
         scale = None
