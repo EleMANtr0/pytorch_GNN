@@ -7,3 +7,5 @@ __pycache__
 */*/*/*/__pycache__
 data/raw/
 data/processed/v8.pt
+results
+legacy

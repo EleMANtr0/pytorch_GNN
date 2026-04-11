@@ -1,4 +1,4 @@
-from ..utils.xpow.read_cif import read_cif
+from utils.xpow.read_cif import read_cif
 import numpy as np
 from numpy import cos, sin
 from glob import glob

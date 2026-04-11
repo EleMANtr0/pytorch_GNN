@@ -1,10 +1,10 @@
 import numpy as np
 from glob import glob
-import json
 import warnings
 import re
 
-from ..utils import qxrd_apc as apc
+from utils import qxrd_apc as apc
+
 
 def load_raman_data(
         model_wavenumber_values,
@@ -22,13 +22,15 @@ def load_raman_data(
     wavelengths = []
     orientation_vecs = []
     raman_ids = []
+    max_int = []
     for fp in file_paths_list:
         with warnings.catch_warnings():
             warnings.simplefilter('error', RuntimeWarning)
             try:
-                mineral_name, rruff_id, wavelength, raman_spectrum, orientation_vec = load_single_raman_spectrum(model_wavenumber_values,fp,zero_pad)
+                mineral_name, rruff_id, wavelength, raman_spectrum, max_intensity, orientation_vec = load_single_raman_spectrum(model_wavenumber_values, fp, zero_pad)
                 mineral_names.append(mineral_name)
                 raman_spectra.append(raman_spectrum)
+                max_int.append(max_intensity)
                 orientation_vecs.append(orientation_vec)
                 wavelengths.append(wavelength)
                 raman_ids.append(rruff_id)
@@ -41,7 +43,7 @@ def load_raman_data(
                     print(f"problem file: {fp}")
                     print("")
 
-    return file_paths_list, raman_ids, mineral_names, raman_spectra, wavelengths, orientation_vecs
+    return file_paths_list, raman_ids, mineral_names, raman_spectra, wavelengths, orientation_vecs, max_int
 
 pattern = re.compile(r"##ORIENTATION.*?[\(\[]\s*([-\d\s\.]+)\s*[\)\]].*?[\(\[]\s*([-\d\s\.]+)\s*[\)\]]")
 
@@ -51,8 +53,8 @@ def load_single_raman_spectrum(
         zero_pad=True):
     mineral_name = file_path.split('\\')[-1].split('/')[-1].split('__')[0]
     
-    raw_id_part = file_path.split('__')[-1]
-    rruff_id = raw_id_part.split('-')[0].replace('.txt', '')
+    raw_id_part = file_path.split('__')[1]
+    rruff_id = raw_id_part.split('-')[0]
     
     wavelength = int(file_path.split('__Raman__')[-1].split('__')[0])
     if "_oriented" in file_path:
@@ -72,8 +74,8 @@ def load_single_raman_spectrum(
     temp_apc = apc.TopLevel(file_path,twotheta_ranges=[(0.0,100000.0)],print_warnings=False)
     if 0 in temp_apc.input_profile.xy_data[1]:
         raise Exception('Model wavenumbers too broad for this spectrum. Skip.')
-    raman_spectrum = process_raman_spectrum(temp_apc.input_profile.xy_data,model_wavenumber_values,zero_pad)
-    return mineral_name, rruff_id, wavelength, raman_spectrum, orientation_vec
+    raman_spectrum, max_intensity = process_raman_spectrum(temp_apc.input_profile.xy_data,model_wavenumber_values,zero_pad)
+    return mineral_name, rruff_id, wavelength, raman_spectrum, max_intensity, orientation_vec
 
 
 def process_raman_spectrum(xy,model_twotheta_values,zero_pad=True):
@@ -81,32 +83,27 @@ def process_raman_spectrum(xy,model_twotheta_values,zero_pad=True):
         intensity_interpolated = np.interp(model_twotheta_values,xy[0],xy[1],left=0.0,right=0.0)
     else:
         intensity_interpolated = np.interp(model_twotheta_values,xy[0],xy[1])
-    intensity_normalized = np.multiply(intensity_interpolated,1.0/np.max(intensity_interpolated))
-    return intensity_normalized
+    intensity_normalized = intensity_interpolated / np.max(intensity_interpolated)
+    return intensity_normalized, np.max(intensity_interpolated)
 
 
-def load_ir_data(ir_dir, ir_wavenumbers):
+def load_ir_data(ir_dir, ir_wavenumbers, zero_pad):
     ir_dict_id = {}
     ir_dict_name = {}
-    for fp in glob(ir_dir + '*/*.txt'):
+    for fp in glob(ir_dir + '*.txt'):
         try:
             filename = fp.split('\\')[-1].split('/')[-1]
             mineral_name = filename.split('__')[0]
             
-            if '__' in filename:
-                base_id = filename.split('__')[-1].split('-')[0].replace('.txt', '')
-            else:
-                base_id = filename.split('-')[0].replace('.txt', '')
-                
-            if not base_id.startswith('R'):
-                base_id = 'R' + base_id
+            
+            raw_id_part = filename.split('__')[1]
+            rruff_id = raw_id_part.split('-')[0]
             
             temp_apc = apc.TopLevel(fp, twotheta_ranges=[(0.0, 100000.0)], print_warnings=False)
-            ir_spectrum = process_raman_spectrum(temp_apc.input_profile.xy_data, ir_wavenumbers, True)
+            ir_spectrum, max_ir = process_raman_spectrum(temp_apc.input_profile.xy_data, ir_wavenumbers, zero_pad=zero_pad)
             
-            if base_id:
-                ir_dict_id[base_id] = ir_spectrum
-            ir_dict_name[mineral_name] = ir_spectrum
+            ir_dict_id[rruff_id] = (ir_spectrum, max_ir)
+            ir_dict_name[mineral_name] = (ir_spectrum, max_ir)
         except:
             pass
     return ir_dict_id, ir_dict_name

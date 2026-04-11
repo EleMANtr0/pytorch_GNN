@@ -1,19 +1,20 @@
-from typing import Optional, Callable
+from collections import defaultdict
+from random import shuffle
+
+import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import InMemoryDataset
-from collections import defaultdict
-from random import shuffle
-import numpy as np
+
 
 class Crystals(InMemoryDataset):
     def __init__(
-        self, 
+        self,
         root: str,
-        wl_list = None,
-        transform: Optional[Callable] = None,
-        pre_transform: Optional[Callable] = None,
-        pre_filter: Optional[Callable] = None
+        wl_list=None,
+        transform = None,
+        pre_transform = None,
+        pre_filter = None,
     ):
         super().__init__(root, transform, pre_transform, pre_filter)
         self.data, self.slices = torch.load(root, weights_only=False)
@@ -21,29 +22,25 @@ class Crystals(InMemoryDataset):
             self.wl_list = [514, 532, 780, 785]
         else:
             self.wl_list = list(np.array([wl_list]).flatten())
-    def get_splits(self, deterministic=True):
-        seed = 0 if deterministic else None
-        all = defaultdict(list)
-        if hasattr(self,"wl"):
-            if self.wl_list is None:
-                self.wl_list = [514,532,780,785]
+
+    def split(self, test_size=0.3, seed=0):
+        all_dict = defaultdict(list)
+        if hasattr(self, "wl"):
             for i in range(len(self.wl)):
-                if round(100*self.wl[i].item()) in self.wl_list:
-                    if round(100*self.wl[i].item()) == self.wl_list[0]:
-                        all[514].append(self[i])
-                    elif round(100*self.wl[i].item()) == self.wl_list[1]:
-                        all[532].append(self[i])
-                    elif round(100*self.wl[i].item()) == self.wl_list[2]:
-                        all[780].append(self[i])
-                    elif round(100*self.wl[i].item()) == self.wl_list[3]:
-                        all[785].append(self[i])
+                if (wl := round(100 * self.wl[i].item())) in self.wl_list:
+                    all_dict[wl].append(self[i])
             traind = {}
             val_testd = {}
             vald = {}
             testd = {}
+            # print({k: len(v) for k, v in all_dict.items()})
             for i in self.wl_list:
-                traind[i], val_testd[i] = train_test_split(all[i], test_size=.3, random_state=seed)
-                vald[i], testd[i] = train_test_split(val_testd[i], test_size=.5, random_state=seed)
+                traind[i], val_testd[i] = train_test_split(
+                    all_dict[i], test_size=test_size, random_state=seed
+                )
+                vald[i], testd[i] = train_test_split(
+                    val_testd[i], test_size=0.5, random_state=seed
+                )
             train = []
             val = []
             test = []
@@ -55,13 +52,13 @@ class Crystals(InMemoryDataset):
             # shuffle(val)
             # shuffle (train)
             return train, val, test
-        train, val_test = train_test_split(self, test_size=.3, random_state=seed)
-        val, test = train_test_split(val_test, test_size=.5, random_state=seed)
+        train, val_test = train_test_split(self, test_size=0.3, random_state=seed)
+        val, test = train_test_split(val_test, test_size=0.5, random_state=seed)
         return train, val, test
 
     @property
     def processed_file_names(self) -> str:
-        return ['data/processed/data_v5.pt']
+        return ["data/processed/data_v5.pt"]
 
 
 def pyg_batch_to_schnetpack(data, cutoff=10.0):
@@ -69,14 +66,17 @@ def pyg_batch_to_schnetpack(data, cutoff=10.0):
         "_atomic_numbers": data.z.long(),
         "_positions": data.pos,
     }
-    if hasattr(data, 'batch'):
+    if hasattr(data, "batch"):
         batch["n_atoms"] = torch.bincount(data.batch)
     else:
         batch["n_atoms"] = torch.tensor([data.z.size(0)])
-    if hasattr(data, 'x') and data.x is not None:
+    if hasattr(data, "x") and data.x is not None:
         batch["_atom_features"] = data.x.float()
     from torch_cluster import radius_graph
-    edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch if hasattr(data, 'batch') else None)
+
+    edge_index = radius_graph(
+        data.pos, r=cutoff, batch=data.batch if hasattr(data, "batch") else None
+    )
 
     idx_i, idx_j = edge_index
     pos_i = data.pos[idx_i]

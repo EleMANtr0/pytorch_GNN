@@ -3,7 +3,8 @@ import numpy as np
 from pathlib import Path
 import os
 from torch_geometric.loader import DataLoader
-wn = np.load("../data/processed/wavenumber_vals_v3.npy")
+from config import wavenumbers
+
 
 def plot_one_dataset(x, title, save_dir=None, rtitle=None):
     if save_dir or save_dir=="":
@@ -12,7 +13,7 @@ def plot_one_dataset(x, title, save_dir=None, rtitle=None):
         filename = f"{title}{rtitle}.png"
         save_path = save_dir / filename
         fig, ax = plt.subplots()
-        ax.plot(wn, x, color="#ff7f0e")
+        ax.plot(wavenumbers, x, color="#ff7f0e")
         ax.set_title(title)
         ax.set_ylabel('Intensity')
         ax.set_xlabel('Raman shift (cm^-1)')
@@ -20,7 +21,7 @@ def plot_one_dataset(x, title, save_dir=None, rtitle=None):
         fig.savefig(save_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
     else:
-        plt.plot(wn, x, color="#ff7f0e")
+        plt.plot(wavenumbers, x, color="#ff7f0e")
         plt.title(title)
         plt.ylabel('Intensity')
         plt.xlabel('Raman shift (cm^-1)')
@@ -66,8 +67,8 @@ def save_all(model, device, dataset, save_dir = None, is_schnet=False,verbose=Tr
             pred = model(data).detach().cpu().numpy().flatten()
         true = data.y.detach().cpu().numpy().flatten()
 
-        P = [(x, p) for (x, p) in zip(wn, pred)]
-        Y = [(x, y) for (x, y) in zip(wn, true)]
+        P = [(x, p) for (x, p) in zip(wavenumbers, pred)]
+        Y = [(x, y) for (x, y) in zip(wavenumbers, true)]
         if isinstance(save_dir, Path):
             plot_spectra(P, Y, title=f"{data.mineral[0]}", rtitle=str(i),
                          save_dir=save_dir,verbose=verbose)
