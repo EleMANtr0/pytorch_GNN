@@ -278,7 +278,7 @@ class MDNet2(nn.Module):
 
         atom_feats, *_ = self.body(z, pos, batch)
         pooled = global_mean_pool(atom_feats, batch)
-        interm = self.interm(pooled)
+        # interm = self.interm(pooled)
 
         wl_emb = self.wl_emb(wl)
         folds_emb = self.folds_emb(folds)
@@ -289,14 +289,14 @@ class MDNet2(nn.Module):
         )
         cond_vec[:, 0] = 1 - cond_vec[:, 0]
         orient_emb = self.orientation_head(cond_vec)
-        combined = torch.cat([interm, wl_emb, folds_emb, orient_emb], dim=-1)
+        combined = torch.cat([pooled, wl_emb, folds_emb, orient_emb], dim=-1)
 
         output = {}
         raman, ram_fact = self.raman(combined)
         output["raman"] = (raman, ram_fact)
 
         if ir_flag:
-            ir, ir_fact = self.ir(interm[x.has_ir])
+            ir, ir_fact = self.ir(pooled[x.has_ir])
             output["ir"] = (ir, ir_fact)
 
         return output
