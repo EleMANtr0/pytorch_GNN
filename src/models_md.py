@@ -302,7 +302,7 @@ class MDNet2(nn.Module):
         return output
 
     def raman(self, x):
-        raw_tensors = self.raman_head(x).view(x.shape[0], n_out, 7)
+        raw_tensors = self.raman_head(x).view(x.shape[0], n_out, 6)
 
         R_xx = raw_tensors[:, :, 0]
         R_yy = raw_tensors[:, :, 1]
@@ -327,7 +327,7 @@ class MDNet2(nn.Module):
         return output, scale
 
     def ir(self, x):
-        raw_tensors = self.ir_head(x).view(x.shape[0], n_out, 4)
+        raw_tensors = self.ir_head(x).view(x.shape[0], n_out, 3)
 
         mu_x = raw_tensors[:, :, 0]
         mu_y = raw_tensors[:, :, 1]
