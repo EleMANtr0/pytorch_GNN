@@ -165,7 +165,7 @@ class Trainer:
                 
                 torch.save(self.model.state_dict(), self.models_dir / f"{self.model_name}_latest.pt")
                 if self.interactive:
-                    pbar.set_description(f"lr: {self.scheduler.get_last_lr()[0]}")
+                    pbar.set_description(f"lr: {self.scheduler.get_last_lr()[0]:.2e}")
                 if self.epoch % self.eval_epochs == 0:
                     self.full_validate()
                     if self.scheduler_name == "plateau":
