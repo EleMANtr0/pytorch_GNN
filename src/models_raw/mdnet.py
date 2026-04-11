@@ -97,6 +97,7 @@ class TorchMD_ET(nn.Module):
 
     def __init__(
         self,
+        hidden_emb=192, # custom
         hidden_channels=128,
         num_layers=6,
         num_rbf=50,
@@ -149,7 +150,7 @@ class TorchMD_ET(nn.Module):
         act_class = act_class_mapping[activation]
 
         self.embedding = nn.Embedding(self.max_z, hidden_channels, dtype=dtype)
-        self.cond_mod = nn.Linear(7, hidden_channels * 2, dtype=dtype)  #custom
+        self.cond_mod = nn.Linear(hidden_emb, hidden_channels * 2, dtype=dtype)  #custom
 
         self.distance = OptimizedDistance(
             cutoff_lower,

@@ -107,6 +107,7 @@ class MDNet1(nn.Module):
                 base_args[k] = v
 
         args = base_args
+        hidden_emb = 64
         self.body = TorchMD_ET(
             hidden_channels=args["embedding_dimension"],
             num_layers=args["num_layers"],
@@ -117,6 +118,7 @@ class MDNet1(nn.Module):
             attn_activation=args["attn_activation"],
             neighbor_embedding=args["neighbor_embedding"],
             num_heads=args["num_heads"],
+            hidden_emb=hidden_emb*3,
             distance_influence=args["distance_influence"],
             cutoff_lower=args["cutoff_lower"],
             cutoff_upper=args["cutoff_upper"],
@@ -124,7 +126,6 @@ class MDNet1(nn.Module):
             max_num_neighbors=args["max_num_neighbors"],
         )
 
-        hidden_emb = 64
         self.wl_emb = WaveLenEmb(
             args["embedding_dimension"],
             args["hidden_size"],
@@ -220,8 +221,10 @@ class MDNet2(nn.Module):
             for k, v in args.items():
                 base_args[k] = v
 
+        hidden_emb = 64
         args = base_args
         self.body = TorchMD_ET(
+            hidden_emb=hidden_emb*3,
             hidden_channels=args["embedding_dimension"],
             num_layers=args["num_layers"],
             num_rbf=args["num_rbf"],
@@ -238,7 +241,6 @@ class MDNet2(nn.Module):
             max_num_neighbors=args["max_num_neighbors"],
         )
 
-        hidden_emb = 64
         self.wl_emb = WaveLenEmb(
             args["embedding_dimension"],
             args["hidden_size"],
@@ -258,15 +260,7 @@ class MDNet2(nn.Module):
             nn.Linear(args["hidden_size"], hidden_emb),
         )
 
-        # self.interm = nn.Sequential(
-        #     nn.Dropout(args["dropout"]),
-        #     nn.Linear(args["embedding_dimension"], args["hidden_size"]),
-        #     nn.LayerNorm(args["hidden_size"]),
-        #     nn.SiLU(),
-        # )
-
         self.raman_head = nn.Sequential(
-            # nn.Dropout(args["dropout"]),
             nn.Linear(args["embedding_dimension"] + hidden_emb * 3, args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
@@ -275,7 +269,6 @@ class MDNet2(nn.Module):
         )
 
         self.ir_head = nn.Sequential(
-            # nn.Dropout(args["dropout"]),
             nn.Linear(args["embedding_dimension"], args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
@@ -283,8 +276,8 @@ class MDNet2(nn.Module):
             nn.Linear(args["hidden_size"], n_out * 3),
         )
 
-        self.raman_scale = nn.Linear(n_out, 1)
-        self.ir_scale = nn.Linear(n_out, 1)
+        # self.raman_scale = nn.Linear(n_out, 1)
+        # self.ir_scale = nn.Linear(n_out, 1)
 
     def forward(self, x, ir_flag=False):
         z = x.z
@@ -298,11 +291,6 @@ class MDNet2(nn.Module):
         else:
             folds = torch.zeros(batch_size, 4, device=wl.device).long()
             folds[:, -1] = 1
-
-        atom_feats, *_ = self.body(z, pos, batch, box=box)
-        pooled = global_mean_pool(atom_feats, batch)
-        # interm = self.interm(pooled)
-
         wl_emb = self.wl_emb(wl)
         folds_emb = self.folds_emb(folds)
         cond_vec = (
@@ -312,10 +300,15 @@ class MDNet2(nn.Module):
         )
         cond_vec[:, 0] = 1 - cond_vec[:, 0]
         orient_emb = self.orientation_head(cond_vec)
-        combined = torch.cat([pooled, wl_emb, folds_emb, orient_emb], dim=-1)
+
+        catted = torch.cat([wl_emb, folds_emb, orient_emb], axis=-1)
+        atom_feats, *_ = self.body(z, pos, batch, cond_vec=catted, box=box)
+        pooled = global_mean_pool(atom_feats, batch)
+
+        # combined = torch.cat([pooled, wl_emb, folds_emb, orient_emb], dim=-1)
 
         output = {}
-        raman, ram_fact = self.raman(combined)
+        raman, ram_fact = self.raman(pooled)#combined)
         output["raman"] = (raman, ram_fact)
 
         if ir_flag:
