@@ -249,7 +249,7 @@ class MDNet2(nn.Module):
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["hidden_size"], n_out * 7),
+            nn.Linear(args["hidden_size"], n_out * 6),
         )
 
         self.ir_head = nn.Sequential(
@@ -258,7 +258,7 @@ class MDNet2(nn.Module):
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["hidden_size"], n_out * 4),
+            nn.Linear(args["hidden_size"], n_out * 3),
         )
 
         self.raman_scale = nn.Linear(n_out, 1)
@@ -321,7 +321,8 @@ class MDNet2(nn.Module):
 
         output = 45.0 * (a**2) + 7.0 * gamma_sq
 
-        scale = 100 * self.raman_scale(raw_tensors[:, :, 6])
+        # scale = 100 * self.raman_scale(raw_tensors[:, :, 6])
+        scale = None
 
         return output, scale
 
@@ -334,7 +335,8 @@ class MDNet2(nn.Module):
 
         output = mu_x**2 + mu_y**2 + mu_z**2
 
-        scale = 100 * self.ir_scale(raw_tensors[:, :, 3])
+        # scale = 100 * self.ir_scale(raw_tensors[:, :, 3])
+        scale = None
 
         return output, scale
 
