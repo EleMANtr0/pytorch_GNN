@@ -4,8 +4,8 @@ from torch_geometric.nn import global_mean_pool
 
 from config import base_args, n_out
 from src.models_raw.mdnet import TorchMD_ET
-
 from .embeddings import FoldsEmb, WaveLenEmb
+from utils import params_to_matrix
 
 
 class MDNet(nn.Module):
@@ -269,6 +269,7 @@ class MDNet2(nn.Module):
         pos = x.pos
         batch = x.batch
         wl = x.wl.view(-1, 1)
+        box = params_to_matrix(x.cell_params)
         batch_size = wl.shape[0]
         if hasattr(x, "folds"):
             folds = x.folds
@@ -276,7 +277,7 @@ class MDNet2(nn.Module):
             folds = torch.zeros(batch_size, 4, device=wl.device).long()
             folds[:, -1] = 1
 
-        atom_feats, *_ = self.body(z, pos, batch)
+        atom_feats, *_ = self.body(z, pos, batch, box=box)
         pooled = global_mean_pool(atom_feats, batch)
         # interm = self.interm(pooled)
 
