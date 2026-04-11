@@ -320,6 +320,7 @@ class MDNet2(nn.Module):
         )
 
         output = 45.0 * (a**2) + 7.0 * gamma_sq
+        output = output / output.max(dim=-1, keepdim=True)[0]
 
         # scale = 100 * self.raman_scale(raw_tensors[:, :, 6])
         scale = None
@@ -334,6 +335,7 @@ class MDNet2(nn.Module):
         mu_z = raw_tensors[:, :, 2]
 
         output = mu_x**2 + mu_y**2 + mu_z**2
+        output = output / output.max(dim=-1, keepdim=True)[0]
 
         # scale = 100 * self.ir_scale(raw_tensors[:, :, 3])
         scale = None

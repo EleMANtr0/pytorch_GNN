@@ -27,7 +27,6 @@ base_args = {
     "trainable_rbf": True,
     "activation": "silu",
     "cutoff_lower": 0.0,
-    "cutoff_upper": 10.0,
     "max_z": 100,
     "max_num_neighbors": 192,
     "aggr": "add",
@@ -43,6 +42,7 @@ base_args = {
     "hidden_size": 128,
     "dropout": 0.3,
 
+    "cutoff_upper": 10.0,
     "num_layers": 4,
     "embedding_dimension": 64,
     "attn_activation": "silu",

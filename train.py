@@ -26,7 +26,7 @@ class Logger:
         self.logger = logging.getLogger("train")
         self.logger.setLevel(logging.INFO)
         dt_string = datetime.now().strftime("%H:%M")
-        day_dir = logdir / datetime.now().strftime("%M_%D")
+        day_dir = logdir / datetime.now().strftime("%m_%d")
         day_dir.mkdir(parents=True, exist_ok=True)
         logging.basicConfig(filename=day_dir / f"train_log{dt_string}.log", format="%(message)s")
 
@@ -245,6 +245,7 @@ if __name__ == "__main__":
     parser.add_argument("--hidden", nargs="?", default=128, type=int)
     parser.add_argument("--drop", nargs="?", default=0.3, type=float)
     parser.add_argument("--num_layers", nargs="?", default=4, type=int)
+    parser.add_argument("--cutoff", nargs="?", default=10.0, type=float)
 
     parser.add_argument("--scale_priority", nargs="?", default=0.0, type=float)
     parser.add_argument("--ir_priority", nargs="?", default=1.0, type=float)
@@ -255,6 +256,7 @@ if __name__ == "__main__":
     device = validate_device(args.device)
     logger.log(f"using {device}")
     model_args = {
+        "cutoff_upper": args.cutoff,
         "embedding_dimension": args.n_embd,
         "attn_activation": "silu",
         "num_heads": args.num_heads,
