@@ -3,7 +3,7 @@ from pathlib import Path
 
 from config import cur_dir, data_path, loss_fn_dict
 from src.data.dataset import Crystals
-from src.loss import CombLoss
+from utils.loss import CombLoss
 from src.metrics import kldiv
 from src.visualization.plotting import save_all
 from torch_geometric.loader import DataLoader

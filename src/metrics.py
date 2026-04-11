@@ -47,7 +47,8 @@ def kldiv(model,device,dataloader,wl=None, is_schnet=False):
             for i, data in enumerate(dataloader):
                 data.to(device)
                 pred = model(data.z, data.pos, data.batch)
-                curr_loss = kl_loss(pred, data.y)
+                raman, scale = pred["raman"]
+                curr_loss = kl_loss(raman, data.y)
                 loss += curr_loss
                 count += 1
                 bad[i] = curr_loss.item()
@@ -61,7 +62,8 @@ def kldiv(model,device,dataloader,wl=None, is_schnet=False):
                 if round(100 * data.wl.item()) in wl:
                     data.to(device)
                     pred = model(data)
-                    curr_loss = kl_loss(pred, data.y)
+                    raman, scale = pred["raman"]
+                    curr_loss = kl_loss(raman, data.y)
                     loss += curr_loss
                     count += 1
                     bad[i] = curr_loss.item()
