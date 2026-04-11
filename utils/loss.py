@@ -119,3 +119,15 @@ class MultiTaskLoss(nn.Module):
     
     def __str__(self):
         return f"multi_{self.loss_fn}"
+
+
+loss_fn_dict = {
+    "mse": MSELoss(), 
+    "mae":L1Loss(), 
+    "msle": MSLELoss(), 
+    "rmse": RMSELoss(), 
+    "cossim": CosSimLoss(), 
+    "iou": IoULoss(), 
+    "kldiv": KLDivLoss(),
+    "multi": MultiTaskLoss
+    }

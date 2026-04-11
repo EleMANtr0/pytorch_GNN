@@ -2,8 +2,6 @@ from pathlib import Path
 
 import numpy as np
 
-from utils.loss import MSELoss, L1Loss, MSLELoss, RMSELoss, CosSimLoss, IoULoss, KLDivLoss, MultiTaskLoss
-
 
 cur_dir = Path(__file__).resolve().parent.parent / "results"
 cur_dir.mkdir(exist_ok=True, parents=True)
@@ -15,17 +13,6 @@ models_dir = cur_dir / "models"
 models_dir.mkdir(parents=True, exist_ok=True)
 
 data_path = Path('data/processed')
-
-loss_fn_dict = {
-    "mse": MSELoss(), 
-    "mae":L1Loss(), 
-    "msle": MSLELoss(), 
-    "rmse": RMSELoss(), 
-    "cossim": CosSimLoss(), 
-    "iou": IoULoss(), 
-    "kldiv": KLDivLoss(),
-    "multi": MultiTaskLoss
-    }
 
 try:
     wavenumbers = np.load('data/processed/wavenumber_vals_v3.npy')

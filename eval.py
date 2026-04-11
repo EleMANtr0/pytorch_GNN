@@ -1,7 +1,8 @@
 import argparse
 from pathlib import Path
 
-from config import cur_dir, data_path, loss_fn_dict
+from config import cur_dir, data_path
+from utils import loss_fn_dict
 from src.data.dataset import Crystals
 from utils.loss import CombLoss
 from src.metrics import kldiv
