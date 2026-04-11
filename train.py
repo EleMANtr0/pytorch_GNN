@@ -49,8 +49,9 @@ class Trainer:
     batch_size: int
     lr: float
     weight_decay: float
-    lr_factor: float
-    lr_patience: float
+    lr_factor: float = None
+    lr_patience: float = None
+    eta_min: float = None
     train_dataset: Crystals
     epochs: int
     logger: Logger
@@ -92,8 +93,10 @@ class Trainer:
         self.val_criterion = loss_fn_dict["kldiv"]
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, 
                                     weight_decay=self.weight_decay)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=self.lr_factor, 
-                                                                    patience=self.lr_patience)
+        # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=self.lr_factor, 
+        #                                                             patience=self.lr_patience)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR( self.optimizer, T_max=self.epochs, 
+                                                                    eta_min=self.eta_min)
         if self.loss_name is not None:
             self.models_dir = models_dir / f'{model_name}_{self.loss_name}'
         else:
@@ -207,6 +210,7 @@ if __name__ == "__main__":
     parser.add_argument("--loss_fn", nargs="*", default=["mse","cossim"], type=str)
     parser.add_argument("--lr_factor", nargs="?", default=0.3, type=float)
     parser.add_argument("--lr_patience", nargs="?", default=5, type=int)
+    parser.add_argument("--eta_min", nargs="?", default=1e-6, type=float)
     # parser.add_argument("--lr_decayer", nargs="?", default=None, type=list[str])
     parser.add_argument("--device", nargs="?")
 
