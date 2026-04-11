@@ -4,7 +4,7 @@ from pathlib import Path
 from config import cur_dir, data_path
 from utils import loss_fn_dict
 from src.data.dataset import Crystals
-from utils.loss import CombLoss
+from utils.loss import CombLoss, MultiTaskLoss
 from src.metrics import kldiv
 from src.visualization.plotting import save_all
 from torch_geometric.loader import DataLoader
@@ -51,6 +51,8 @@ if len(losses) == 1:
     loss_fn = loss_fn_dict["".join(losses[0])]
 else:
     loss_fn = CombLoss(*[(1, loss_fn_dict[loss]) for loss in losses])
+if args.ir:
+    loss_fn = MultiTaskLoss(loss_fn).to(device)
 loss_name = str(loss_fn)
 
 version = VersionFromName(model_name, loss_name=loss_name)
