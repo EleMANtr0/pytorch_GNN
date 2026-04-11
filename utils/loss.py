@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class L1Loss(nn.L1Loss):
     def __str__(self):
         return "mae"
@@ -16,9 +17,9 @@ class MSLELoss(nn.Module):
         self.mse = nn.MSELoss()
 
     def forward(self, y_pred, y_true):
-        y_pred = torch.clamp(y_pred, min=0)
-        y_true = torch.clamp(y_true, min=0)
-        return self.mse(torch.log1p(y_pred), torch.log1p(y_true))
+        cos_sim = F.cosine_similarity(y_pred, y_true, dim=-1, eps=self.eps)
+        loss = 1 - cos_sim.mean()
+        return loss
 
     def __str__(self):
         return "msle"
@@ -90,78 +91,31 @@ class CombLoss(nn.Module):
         super().__init__()
         self.loss = CF
 
-    def forward(self,y_pred,y_true):
+    def forward(self, y_pred, y_true):
         res = 0
         for i in self.loss:
-            res += i[0] * i[1](y_pred,y_true)
+            res += i[0] * i[1](y_pred, y_true)
         return res
+    
     def __str__(self):
         name = ""
         for i in self.loss:
-            name += str(i[0]) + repr(i[1]) + "_"
+            name += str(i[0]) + str(i[1]) + "_"
         name = name[:-1]
         return name
 
 
-class AdaptiveCombLoss(nn.Module):
-    def __init__(self, *CF, mode='dynamic'):
+class MultiTaskLoss(nn.Module):
+    def __init__(self, loss_fn: CombLoss):
         super().__init__()
-        self.mode = mode
-        self.loss_functions = CF
-        if mode == 'dynamic':
-            self.alpha = 0.5
-            self.history = [0.0] * len(self.loss_functions)
-            self.current_weights = [1.0 / len(self.loss_functions)] * len(self.loss_functions)
-        elif mode == 'learnable':
-            initial_weights = [weight for weight, _ in self.loss_functions]
-            self.weights = nn.Parameter(torch.tensor(initial_weights, dtype=torch.float32))
+        self.loss_fn = loss_fn
+        self.log_vars = nn.Parameter(torch.zeros(2))
 
-    def forward(self, y_pred, y_true):
-        if self.mode == 'dynamic':
-            losses = []
-            for _, loss_fn in self.loss_functions:
-                loss_value = loss_fn(y_pred, y_true)
-                losses.append(loss_value.detach().item())
-
-            for i, val in enumerate(losses):
-                if self.history[i] == 0:
-                    self.history[i] = val
-                else:
-                    self.history[i] = self.alpha * val + (1 - self.alpha) * self.history[i]
-
-            weights = [1.0 / (h + 1e-8) for h in self.history]
-            s = sum(weights)
-            if s > 0:
-                weights = [w / s for w in weights]
-            else:
-                n = len(weights)
-                weights = [1.0 / n] * n
-            self.current_weights = weights
-
-            total_loss = 0
-            for i, (_, loss_fn) in enumerate(self.loss_functions):
-                total_loss += weights[i] * loss_fn(y_pred, y_true)
-            return total_loss
-
-        elif self.mode == 'learnable':
-            normalized_weights = F.softmax(self.weights, dim=0)
-            total_loss = 0
-            for i, (_, loss_fn) in enumerate(self.loss_functions):
-                total_loss += normalized_weights[i] * loss_fn(y_pred, y_true)
-            return total_loss
-
-    def get_weights(self):
-        if self.mode == 'dynamic':
-            return self.current_weights
-        elif self.mode == 'learnable':
-            return F.softmax(self.weights, dim=0).tolist()
-
+    def forward(self, pred: tuple, target: tuple):
+        precision_main = torch.exp(-self.log_vars[0])
+        precision_aux = torch.exp(-self.log_vars[1])
+        total_loss = precision_main * self.loss_fn(pred[0], target[0]) + precision_aux * self.loss_fn(pred[1], target[1]) + self.log_vars[0] + self.log_vars[1]
+        return total_loss
+    
     def __str__(self):
-        name = ""
-        if self.mode == "dynamic":
-            name = "adaptive_"
-        else:
-            name = "learnable_"
-        for _, loss_fn in self.loss_functions:
-            name += f"{repr(loss_fn)}_"
-        return name[:-1]
+        return f"multi_{self.loss_fn}"

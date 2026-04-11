@@ -14,7 +14,7 @@ import numpy as np
 
 from src.models import MDNet2, models_dict
 from src.data.dataset import Crystals
-from src.loss import CombLoss, L1Loss
+from utils.loss import CombLoss, L1Loss, MultiTaskLoss
 from config import loss_fn_dict, models_dir, data_path, logdir, tblogdir
 from utils import VersionFromName, DatasetContext, DatasetExtractor, validate_device, load_model, load_data
 
@@ -25,7 +25,9 @@ class Logger:
         self.logger = logging.getLogger("train")
         self.logger.setLevel(logging.INFO)
         dt_string = datetime.now().strftime("%H:%M")
-        logging.basicConfig(filename=logdir/f"train_log{dt_string}.log", format="%(message)s")
+        day_dir = logdir / datetime.now().strftime("%M_%D")
+        day_dir.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(filename=day_dir / f"train_log{dt_string}.log", format="%(message)s")
 
     def add_logs(self, sum_wr: SummaryWriter, epoch, loss, name):
         sum_wr.add_scalar(f"{name}/loss", loss, epoch)
@@ -35,12 +37,23 @@ class Logger:
             print(msg)
         self.logger.info(msg)
 
+
 @dataclass
 class DynamicStats:
     best_loss: float = np.inf
     best_path: str = None
     train_loss: dict = None
     val_loss: dict = None
+
+class DummyScheduler:
+    def __init__(self, optimizer: torch.optim.Optimizer):
+        self.optimizer = optimizer
+
+    def step(self):
+        pass
+
+    def get_last_lr(self):
+        return [self.optimizer.param_groups[0]["lr"]]
 
 @dataclass
 class Trainer:
@@ -52,10 +65,12 @@ class Trainer:
     train_dataset: Crystals
     epochs: int
     logger: Logger
-    loss_fn: CombLoss
+    criterion: CombLoss
+    ir_flag: bool = False
     lr_factor: float = None
     lr_patience: float = None
     eta_min: float = None
+    decay_steps: int = None
     loss_name: str = None
     eval_epochs: int = 10
     epoch: int = 0
@@ -88,15 +103,26 @@ class Trainer:
                                 num_workers=self.num_workers, shuffle=True, 
                                 pin_memory=True, persistent_workers=True)
         
-        self.criterion = self.loss_fn
         self.scale_criterion = L1Loss()
         self.val_criterion = loss_fn_dict["kldiv"]
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, 
+        params = list(self.model.parameters())
+        if hasattr(self.criterion, "log_vars"):
+            params += list(self.criterion.parameters())
+        self.optimizer = torch.optim.AdamW(params, lr=self.lr, 
                                     weight_decay=self.weight_decay)
-        # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=self.lr_factor, 
-        #                                                             patience=self.lr_patience)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR( self.optimizer, T_max=self.epochs, 
-                                                                    eta_min=self.eta_min)
+        if self.eta_min is not None:
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, 
+                T_max=self.decay_steps if self.decay_steps is not None else self.epochs, 
+                eta_min=self.eta_min)
+            self.scheduler_name = "cos"
+        elif self.lr_factor is not None and self.lr_patience is not None:
+            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 
+                factor=self.lr_factor, patience=self.lr_patience)
+            self.scheduler_name = "plateau"
+        else:
+            self.scheduler = DummyScheduler(self.optimizer)
+            self.scheduler_name = None
+
         if self.loss_name is not None:
             self.models_dir = models_dir / f'{model_name}_{self.loss_name}'
         else:
@@ -105,8 +131,6 @@ class Trainer:
         
         conf = self.models_dir / f"{n_params}M.config"
         conf.write_text(json.dumps(self.model.get_args(), indent=1))
-        self.ir_flag = hasattr(self.model, "ir_head")
-        self.logger.log("using ir spectra")
 
     def train(self):
         if self.interactive:
@@ -118,7 +142,6 @@ class Trainer:
             for epoch in pbar:
                 self.model.train()
                 self.epoch = epoch
-                running_loss = 0
                 for batch in self.train_loader:
                     batch = batch.to(self.device, non_blocking=True)
                     pred = self.model(batch, ir_flag=self.ir_flag)
@@ -126,32 +149,27 @@ class Trainer:
                     if self.ir_flag:
                         ir, ir_scale = pred["ir"]
                         if ir.shape[0] != 0:
-                            ir_loss = self.criterion(ir, batch.ir_y[batch.has_ir]) * self.ir_priority
-                            if self.scale_priority > 0:
-                                ir_loss += self.scale_criterion(ir_scale.view(-1), batch.ir_fact[batch.has_ir]) * self.ir_priority * self.scale_priority
-                    
-                    loss = self.criterion(raman, batch.y)
-                
-                    running_loss += loss.item() * batch.y.shape[0]
-
-                    if self.scale_priority > 0 and ram_scale is not None:
-                            loss += self.scale_criterion(ram_scale.view(-1), batch.ram_fact) * self.scale_priority
-                    
-                    if self.ir_flag:
-                        if ir.shape[0] != 0:
-                            loss += ir_loss
+                            preds = (raman, ir)
+                            targets = (batch.y, batch.ir_y[batch.has_ir])
+                            loss = self.criterion(preds, targets)
+                        else:
+                            loss = self.criterion.loss_fn(raman, batch.y)
+                    else:
+                        loss = self.criterion(raman, batch.y)
                     self.optimizer.zero_grad()
                     loss.backward()
                     nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.optimizer.step()
-                running_loss /= len(self.train_loader.sampler)
+                if self.scheduler_name == "cos":
+                    self.scheduler.step()
                 
                 torch.save(self.model.state_dict(), self.models_dir / f"{self.model_name}_latest.pt")
                 if self.interactive:
                     pbar.set_description(f"lr: {self.scheduler.get_last_lr()[0]}")
                 if self.epoch % self.eval_epochs == 0:
                     self.full_validate()
-                    self.scheduler.step(self.val_loss)
+                    if self.scheduler_name == "plateau":
+                        self.scheduler.step(self.val_loss)
                 
         except KeyboardInterrupt:
             self.logger.log(f"\ninterrupted on epoch {self.epoch}")
@@ -208,16 +226,17 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", nargs="?", default=128, type=int)
     parser.add_argument("--val_batch_size", nargs="?", default=256, type=int)
     parser.add_argument("--loss_fn", nargs="*", default=["mse","cossim"], type=str)
-    parser.add_argument("--lr_factor", nargs="?", default=0.3, type=float)
-    parser.add_argument("--lr_patience", nargs="?", default=5, type=int)
-    parser.add_argument("--eta_min", nargs="?", default=1e-6, type=float)
-    # parser.add_argument("--lr_decayer", nargs="?", default=None, type=list[str])
+    parser.add_argument("--lr_factor", nargs="?", type=float)
+    parser.add_argument("--lr_patience", nargs="?", type=int)
+    parser.add_argument("--eta_min", nargs="?", type=float)
+    parser.add_argument("--decay_steps", nargs="?", type=int)
     parser.add_argument("--device", nargs="?")
 
     parser.add_argument("--model_name", nargs="?")
     parser.add_argument("--model_version", nargs="?")
     parser.add_argument("--dataset", nargs="?", default="v8.pt")
-    parser.add_argument("--inter", nargs="?", default="True")
+    parser.add_argument("--inter", action="store_true")
+    parser.add_argument("--ir", action="store_true")
 
     parser.add_argument("--n_embd", nargs="?", default=64, type=int)
     parser.add_argument("--num_heads", nargs="?", default=4, type=int)
@@ -231,8 +250,7 @@ if __name__ == "__main__":
     
 
     args = parser.parse_args()
-    inter = args.inter == "True"
-    logger = Logger(interactive=inter)
+    logger = Logger(interactive=args.inter)
     device = validate_device(args.device)
     logger.log(f"using {device}")
     model_args = {
@@ -251,13 +269,16 @@ if __name__ == "__main__":
         loss_fn = loss_fn_dict["".join(losses[0])]
     else:
         loss_fn = CombLoss(*[(1, loss_fn_dict[loss]) for loss in losses])
+    if args.ir:
+        logger.log("using ir spectra")
+        loss_fn = MultiTaskLoss(loss_fn).to(device)
     loss_name = str(loss_fn)
 
     if args.model_version is not None:
         model = models_dict[args.model_version](model_args).to(device)
     elif model_name is not None:
-        version = VersionFromName(model_name,loss_name=loss_name)
-        model = load_model(model_version=version,model_name=model_name, args=model_args)
+        version = VersionFromName(model_name, loss_name=loss_name)
+        model = load_model(model_version=version, model_name=model_name, args=model_args)
     else:
         model = MDNet2(model_args).to(device)
     dataset_path = data_path / args.dataset
@@ -276,20 +297,22 @@ if __name__ == "__main__":
         batch_size=args.batch_size, 
         lr=args.lr, 
         weight_decay=args.weight_decay,
-        lr_factor=args.lr_factor, 
-        lr_patience=args.lr_patience,
-        eta_min=args.eta_min,
         train_dataset=train_dataset, 
         epochs=args.epochs,
         logger=logger,
-        loss_fn=loss_fn,
+        criterion=loss_fn,
+        ir_flag=args.ir,
+        lr_factor=args.lr_factor, 
+        lr_patience=args.lr_patience,
+        eta_min=args.eta_min,
+        decay_steps=args.decay_steps,
         loss_name=loss_name,
         eval_epochs=args.eval_epochs,
         epoch=args.epoch, 
         val_dataset=val_dataset,
         val_batch_size=args.val_batch_size,
         num_workers=4,
-        interactive=inter,
+        interactive=args.inter,
         ir_priority=args.ir_priority,
         scale_priority=args.scale_priority
         )

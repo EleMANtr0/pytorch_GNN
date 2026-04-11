@@ -1,9 +1,8 @@
 from pathlib import Path
 
 import numpy as np
-from torch.optim.lr_scheduler import MultiStepLR, ExponentialLR, CosineAnnealingLR, StepLR
 
-from src.loss import MSELoss, L1Loss, MSLELoss, RMSELoss, CosSimLoss, IoULoss, KLDivLoss
+from utils.loss import MSELoss, L1Loss, MSLELoss, RMSELoss, CosSimLoss, IoULoss, KLDivLoss, MultiTaskLoss
 
 
 cur_dir = Path(__file__).resolve().parent.parent / "results"
@@ -24,15 +23,10 @@ loss_fn_dict = {
     "rmse": RMSELoss(), 
     "cossim": CosSimLoss(), 
     "iou": IoULoss(), 
-    "kldiv": KLDivLoss()
+    "kldiv": KLDivLoss(),
+    "multi": MultiTaskLoss
     }
 
-# decay_dict = {
-#     "milestone": MultiStepLR,
-#     "exp": ExponentialLR,
-#     "cos": CosineAnnealingLR,
-#     "step": StepLR
-# }
 try:
     wavenumbers = np.load('data/processed/wavenumber_vals_v3.npy')
 except FileNotFoundError:
