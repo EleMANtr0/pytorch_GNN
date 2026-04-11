@@ -49,13 +49,13 @@ class Trainer:
     batch_size: int
     lr: float
     weight_decay: float
-    lr_factor: float = None
-    lr_patience: float = None
-    eta_min: float = None
     train_dataset: Crystals
     epochs: int
     logger: Logger
     loss_fn: CombLoss
+    lr_factor: float = None
+    lr_patience: float = None
+    eta_min: float = None
     loss_name: str = None
     eval_epochs: int = 10
     epoch: int = 0
