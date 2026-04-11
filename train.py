@@ -187,7 +187,8 @@ class Trainer:
             for batch in loader:
                 batch = batch.to(self.device, non_blocking=True)
                 pred = self.model(batch)
-                loss += self.val_criterion(pred, batch.y).item() * batch.y.shape[0]
+                raman, ram_scale = pred["raman"]
+                loss += self.val_criterion(raman, batch.y).item() * batch.y.shape[0]
             loss /= len(loader.sampler)
         return loss
 
@@ -212,7 +213,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_name", nargs="?")
     parser.add_argument("--model_version", nargs="?")
     parser.add_argument("--dataset", nargs="?", default="v8.pt")
-    parser.add_argument("--inter", nargs="?", default=True)
+    parser.add_argument("--inter", nargs="?", default="True")
 
     parser.add_argument("--n_embd", nargs="?", default=64, type=int)
     parser.add_argument("--num_heads", nargs="?", default=4, type=int)
@@ -226,8 +227,8 @@ if __name__ == "__main__":
     
 
     args = parser.parse_args()
-    args.inter = args.inter == "True"
-    logger = Logger(interactive=args.inter)
+    inter = args.inter == "True"
+    logger = Logger(interactive=inter)
     device = validate_device(args.device)
     logger.log(f"using {device}")
     model_args = {
@@ -283,7 +284,7 @@ if __name__ == "__main__":
         val_dataset=val_dataset,
         val_batch_size=args.val_batch_size,
         num_workers=4,
-        interactive=args.inter,
+        interactive=inter,
         ir_priority=args.ir_priority,
         scale_priority=args.scale_priority
         )
