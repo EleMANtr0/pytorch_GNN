@@ -337,9 +337,10 @@ class MDNet2(nn.Module):
         )
 
         output = 45.0 * (a**2) + 7.0 * gamma_sq
-        background = F.softplus(bg)
-        output = output / output.max(dim=-1, keepdim=True)[0]
+        background = F.sigmoid(bg) - 0.5
         output = output + background
+        output = output / output.max(dim=-1, keepdim=True)[0]
+        # output = output / output.max(dim=-1, keepdim=True)[0]
 
         # scale = 100 * self.raman_scale(raw_tensors[:, :, 6])
         scale = None
