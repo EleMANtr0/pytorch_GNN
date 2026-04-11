@@ -278,6 +278,7 @@ if __name__ == "__main__":
         weight_decay=args.weight_decay,
         lr_factor=args.lr_factor, 
         lr_patience=args.lr_patience,
+        eta_min=args.eta_min,
         train_dataset=train_dataset, 
         epochs=args.epochs,
         logger=logger,
