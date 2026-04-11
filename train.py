@@ -15,7 +15,8 @@ import numpy as np
 from src.models import MDNet2, models_dict
 from src.data.dataset import Crystals
 from utils.loss import CombLoss, L1Loss, MultiTaskLoss
-from config import loss_fn_dict, models_dir, data_path, logdir, tblogdir
+from config import models_dir, data_path, logdir, tblogdir
+from utils import loss_fn_dict
 from utils import VersionFromName, DatasetContext, DatasetExtractor, validate_device, load_model, load_data
 
 # uv run workdir/train.py --epochs 100 --lr 1e-4 --eval_epochs 2 --batch_size 256 --val_batch_size 256 --inter True --n_embd 128 --num_heads 4 --drop 0.4 --hidden 128

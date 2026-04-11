@@ -29,7 +29,7 @@ base_args = {
     "cutoff_lower": 0.0,
     "cutoff_upper": 10.0,
     "max_z": 100,
-    "max_num_neighbors": 128,
+    "max_num_neighbors": 192,
     "aggr": "add",
     "derivative": False,
     "atom_filter": -1,

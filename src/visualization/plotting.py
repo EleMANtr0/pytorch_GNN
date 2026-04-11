@@ -64,11 +64,10 @@ def save_all(model, device, dataset, save_dir = None, is_schnet=False,verbose=Tr
         if is_schnet:
             pred = model(data.z, data.pos, data.batch).detach().cpu().numpy().flatten()
         else:
-            pred = model(data).detach().cpu().numpy().flatten()
+            pred = model(data)["raman"][0].detach().cpu().numpy().flatten()
         true = data.y.detach().cpu().numpy().flatten()
-        raman, scale = pred["raman"]
 
-        P = [(x, p) for (x, p) in zip(wavenumbers, raman)]
+        P = [(x, p) for (x, p) in zip(wavenumbers, pred)]
         Y = [(x, y) for (x, y) in zip(wavenumbers, true)]
         if isinstance(save_dir, Path):
             plot_spectra(P, Y, title=f"{data.mineral[0]}", rtitle=str(i),
