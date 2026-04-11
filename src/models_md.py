@@ -5,7 +5,28 @@ from torch_geometric.nn import global_mean_pool
 from config import base_args, n_out
 from src.models_raw.mdnet import TorchMD_ET
 from .embeddings import FoldsEmb, WaveLenEmb
-from utils import params_to_matrix
+
+
+
+def params_to_matrix(cell_params):
+    a, b, c, alpha_deg, beta_deg, gamma_deg = cell_params.unbind(dim=-1)
+    
+    alpha = alpha_deg * torch.pi / 180.0
+    beta = beta_deg * torch.pi / 180.0
+    gamma = gamma_deg * torch.pi / 180.0
+    
+    cy = c * (torch.cos(alpha) - torch.cos(beta) * torch.cos(gamma)) / torch.sin(gamma)
+    cz = torch.sqrt(c**2 - (c * torch.cos(beta))**2 - cy**2)
+    
+    box = torch.zeros(cell_params.shape[0], 3, 3, device=cell_params.device)
+    box[:, 0, 0] = a
+    box[:, 1, 0] = b * torch.cos(gamma)
+    box[:, 1, 1] = b * torch.sin(gamma)
+    box[:, 2, 0] = c * torch.cos(beta)
+    box[:, 2, 1] = cy
+    box[:, 2, 2] = cz
+    return box
+
 
 
 class MDNet(nn.Module):

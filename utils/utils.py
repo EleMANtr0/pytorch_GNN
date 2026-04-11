@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import Protocol, Any
-from pathlib import Path
 import json
 
 import torch
@@ -94,22 +93,3 @@ def drop(tens: torch.Tensor, idx):
     mask = torch.ones(tens.size(0),tens.size(1),dtype=torch.bool,device=tens.device)
     mask[:,idx] = False
     return tens[mask].view(tens.size(0),-1)
-
-def params_to_matrix(cell_params):
-    a, b, c, alpha_deg, beta_deg, gamma_deg = cell_params.unbind(dim=-1)
-    
-    alpha = alpha_deg * torch.pi / 180.0
-    beta = beta_deg * torch.pi / 180.0
-    gamma = gamma_deg * torch.pi / 180.0
-    
-    cy = c * (torch.cos(alpha) - torch.cos(beta) * torch.cos(gamma)) / torch.sin(gamma)
-    cz = torch.sqrt(c**2 - (c * torch.cos(beta))**2 - cy**2)
-    
-    box = torch.zeros(cell_params.shape[0], 3, 3, device=cell_params.device)
-    box[:, 0, 0] = a
-    box[:, 1, 0] = b * torch.cos(gamma)
-    box[:, 1, 1] = b * torch.sin(gamma)
-    box[:, 2, 0] = c * torch.cos(beta)
-    box[:, 2, 1] = cy
-    box[:, 2, 2] = cz
-    return box
