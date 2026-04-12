@@ -97,7 +97,7 @@ class TorchMD_ET(nn.Module):
 
     def __init__(
         self,
-        hidden_emb=192, # custom
+        node_feature_dim=8, # custom
         hidden_channels=128,
         num_layers=6,
         num_rbf=50,
@@ -150,7 +150,7 @@ class TorchMD_ET(nn.Module):
         act_class = act_class_mapping[activation]
 
         self.embedding = nn.Embedding(self.max_z, hidden_channels, dtype=dtype)
-        self.cond_mod = nn.Linear(hidden_emb, hidden_channels * 2, dtype=dtype)  #custom
+        self.x_proj = nn.Linear(node_feature_dim, hidden_channels, dtype=dtype) # custom
 
         self.distance = OptimizedDistance(
             cutoff_lower,
@@ -209,16 +209,14 @@ class TorchMD_ET(nn.Module):
         z: Tensor,
         pos: Tensor,
         batch: Tensor,
-        cond_vec: Optional[Tensor] = None, # custom
+        node_features: Optional[Tensor] = None,
         box: Optional[Tensor] = None,
         q: Optional[Tensor] = None,
         s: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         x = self.embedding(z)
-        if cond_vec is not None:
-            cond_params = self.cond_mod(cond_vec)
-            scale, shift = cond_params.chunk(2, dim=-1)
-            x = x * scale[batch] + shift[batch]
+        if node_features is not None:
+            x = x + self.x_proj(node_features)
         edge_index, edge_weight, edge_vec = self.distance(pos, batch, box)
         # This assert must be here to convince TorchScript that edge_vec is not None
         # If you remove it TorchScript will complain down below that you cannot use an Optional[Tensor]

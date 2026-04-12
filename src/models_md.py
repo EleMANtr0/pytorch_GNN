@@ -220,11 +220,11 @@ class MDNet2(nn.Module):
         if self.args is not None:
             for k, v in args.items():
                 base_args[k] = v
-
         hidden_emb = 64
         args = base_args
+
         self.body = TorchMD_ET(
-            hidden_emb=hidden_emb*3,
+            node_feature_dim=8,
             hidden_channels=args["embedding_dimension"],
             num_layers=args["num_layers"],
             num_rbf=args["num_rbf"],
@@ -260,24 +260,31 @@ class MDNet2(nn.Module):
             nn.Linear(args["hidden_size"], hidden_emb),
         )
 
+        self.raman_vec_proj1 = nn.Linear(args["embedding_dimension"], args["hidden_size"])
+        self.raman_vec_proj2 = nn.Linear(args["embedding_dimension"], args["hidden_size"])
+        
         self.raman_head = nn.Sequential(
-            nn.Linear(args["embedding_dimension"], args["hidden_size"]),
-            nn.LayerNorm(args["hidden_size"]),
+            nn.Linear(args["embedding_dimension"] + hidden_emb * 3, args["hidden_size"]),
             nn.SiLU(),
-            nn.Dropout(args["dropout"]),
-            nn.Linear(args["hidden_size"], n_out * 7),
+            nn.LayerNorm(args["hidden_size"]),
+            nn.Linear(args["hidden_size"], n_out * 7)
         )
+
+        # self.raman_head = nn.Sequential(
+        #     nn.Linear(args["embedding_dimension"], args["hidden_size"]),
+        #     nn.LayerNorm(args["hidden_size"]),
+        #     nn.SiLU(),
+        #     nn.Dropout(args["dropout"]),
+        #     nn.Linear(args["hidden_size"], n_out * 7),
+        # )
 
         self.ir_head = nn.Sequential(
             nn.Linear(args["embedding_dimension"], args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
-            nn.Linear(args["hidden_size"], n_out * 3),
+            nn.Linear(args["hidden_size"], n_out),
         )
-
-        # self.raman_scale = nn.Linear(n_out, 1)
-        # self.ir_scale = nn.Linear(n_out, 1)
 
     def forward(self, x, ir_flag=False):
         z = x.z
@@ -301,30 +308,34 @@ class MDNet2(nn.Module):
         cond_vec[:, 0] = 1 - cond_vec[:, 0]
         orient_emb = self.orientation_head(cond_vec)
 
-        atom_feats, *_ = self.body(z, pos, batch, box=box)
-        pooled = global_mean_pool(atom_feats, batch)
-
-        combined = torch.cat([pooled, wl_emb, folds_emb, orient_emb], dim=-1)
+        scalar_feats, vec_feats, *_ = self.body(z, pos, batch, box=box, node_features=x.x)
+        pooled_scalar = global_mean_pool(scalar_feats, batch)
+        vec_dim = vec_feats.shape[2]
+        pooled_vec = global_mean_pool(vec_feats.reshape(-1, 3 * vec_dim), batch).reshape(-1, 3, vec_dim)
+        combined = torch.cat([pooled_scalar, wl_emb, folds_emb, orient_emb], dim=-1)
 
         output = {}
-        raman, ram_fact = self.raman(combined)
+        raman, ram_fact = self.raman(combined, pooled_vec)
         output["raman"] = (raman, ram_fact)
 
         if ir_flag:
-            ir, ir_fact = self.ir(pooled[x.has_ir])
+            ir, ir_fact = self.ir(pooled_vec[x.has_ir])
             output["ir"] = (ir, ir_fact)
 
         return output
 
-    def raman(self, x):
-        raw_tensors = self.raman_head(x).view(x.shape[0], n_out, 7)
-
-        R_xx = raw_tensors[:, :, 0]
-        R_yy = raw_tensors[:, :, 1]
-        R_zz = raw_tensors[:, :, 2]
-        R_xy = raw_tensors[:, :, 3]
-        R_yz = raw_tensors[:, :, 4]
-        R_xz = raw_tensors[:, :, 5]
+    def raman(self, scalar, vec):
+        raw_tensors = self.raman_head(scalar).view(scalar.shape[0], n_out, 7)
+        v1 = self.raman_vec_proj1(vec)
+        v2 = self.raman_vec_proj2(vec)
+        tensor = torch.bmm(v1, v2.transpose(1, 2))
+        tensor = (tensor + tensor.transpose(1, 2)) / 2.0
+        R_xx = tensor[:, 0, 0].unsqueeze(1).expand(-1, n_out) * raw_tensors[:, :, 0]
+        R_yy = tensor[:, 1, 1].unsqueeze(1).expand(-1, n_out) * raw_tensors[:, :, 1]
+        R_zz = tensor[:, 2, 2].unsqueeze(1).expand(-1, n_out) * raw_tensors[:, :, 2]
+        R_xy = tensor[:, 0, 1].unsqueeze(1).expand(-1, n_out) * raw_tensors[:, :, 3]
+        R_yz = tensor[:, 1, 2].unsqueeze(1).expand(-1, n_out) * raw_tensors[:, :, 4]
+        R_xz = tensor[:, 0, 2].unsqueeze(1).expand(-1, n_out) * raw_tensors[:, :, 5]
         bg = raw_tensors[:, :, 6]
 
         a = (R_xx + R_yy + R_zz) / 3.0
@@ -346,12 +357,12 @@ class MDNet2(nn.Module):
 
         return output, scale
 
-    def ir(self, x):
-        raw_tensors = self.ir_head(x).view(x.shape[0], n_out, 3)
+    def ir(self, vec):
+        raw_tensors = self.ir_head(vec).view(vec.shape[0], n_out, 3)
 
-        mu_x = raw_tensors[:, :, 0]
-        mu_y = raw_tensors[:, :, 1]
-        mu_z = raw_tensors[:, :, 2]
+        mu_x = raw_tensors[:, 0, :]
+        mu_y = raw_tensors[:, 1, :]
+        mu_z = raw_tensors[:, 2, :]
 
         output = mu_x**2 + mu_y**2 + mu_z**2
         output = output / output.max(dim=-1, keepdim=True)[0]
