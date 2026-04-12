@@ -261,7 +261,7 @@ class MDNet2(nn.Module):
         )
 
         self.raman_head = nn.Sequential(
-            nn.Linear(args["embedding_dimension"] + hidden_emb * 3, args["hidden_size"]),
+            nn.Linear(args["embedding_dimension"], args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
@@ -301,14 +301,13 @@ class MDNet2(nn.Module):
         cond_vec[:, 0] = 1 - cond_vec[:, 0]
         orient_emb = self.orientation_head(cond_vec)
 
-        catted = torch.cat([wl_emb, folds_emb, orient_emb], axis=-1)
-        atom_feats, *_ = self.body(z, pos, batch, cond_vec=catted, box=box)
+        atom_feats, *_ = self.body(z, pos, batch, box=box)
         pooled = global_mean_pool(atom_feats, batch)
 
-        # combined = torch.cat([pooled, wl_emb, folds_emb, orient_emb], dim=-1)
+        combined = torch.cat([pooled, wl_emb, folds_emb, orient_emb], dim=-1)
 
         output = {}
-        raman, ram_fact = self.raman(pooled)#combined)
+        raman, ram_fact = self.raman(combined)
         output["raman"] = (raman, ram_fact)
 
         if ir_flag:
