@@ -25,7 +25,7 @@ class Crystals(InMemoryDataset):
             self.wl_list = list(np.array([wl_list]).flatten())
     
     def get_only_ir(self):
-        return self[self.data.has_ir]
+        return self[self._data.has_ir]
 
     def split(self, test_size=0.3, seed=0):
         all_dict = defaultdict(list)
