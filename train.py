@@ -227,9 +227,11 @@ class Trainer:
                 pred = self.model(batch)
                 if self.raman_flag:
                     out  = pred["raman"]
+                    target = batch.y
                 else:
                     out = pred["ir"]
-                loss += self.val_criterion(out, batch.y).item() * batch.y.shape[0]
+                    target = batch.ir_y
+                loss += self.val_criterion(out, target).item() * batch.y.shape[0]
             loss /= len(loader.sampler)
         return loss
 
