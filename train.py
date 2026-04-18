@@ -225,8 +225,11 @@ class Trainer:
             for batch in loader:
                 batch = batch.to(self.device, non_blocking=True)
                 pred = self.model(batch)
-                raman, ram_scale = pred["raman"]
-                loss += self.val_criterion(raman, batch.y).item() * batch.y.shape[0]
+                if self.raman_flag:
+                    out  = pred["raman"]
+                else:
+                    out = pred["ir"]
+                loss += self.val_criterion(out, batch.y).item() * batch.y.shape[0]
             loss /= len(loader.sampler)
         return loss
 
