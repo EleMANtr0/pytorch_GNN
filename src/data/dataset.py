@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import InMemoryDataset
+from torch_cluster import radius_graph
 
 
 class Crystals(InMemoryDataset):
@@ -22,6 +23,9 @@ class Crystals(InMemoryDataset):
             self.wl_list = [514, 532, 780, 785]
         else:
             self.wl_list = list(np.array([wl_list]).flatten())
+    
+    def get_only_ir(self):
+        return self[self.data.has_ir]
 
     def split(self, test_size=0.3, seed=0):
         all_dict = defaultdict(list)
@@ -72,7 +76,6 @@ def pyg_batch_to_schnetpack(data, cutoff=10.0):
         batch["n_atoms"] = torch.tensor([data.z.size(0)])
     if hasattr(data, "x") and data.x is not None:
         batch["_atom_features"] = data.x.float()
-    from torch_cluster import radius_graph
 
     edge_index = radius_graph(
         data.pos, r=cutoff, batch=data.batch if hasattr(data, "batch") else None

@@ -85,7 +85,7 @@ class MDNet(nn.Module):
         combined_feats = torch.cat([pooled_feats, wl_out], dim=1)
 
         raman = self.head(combined_feats)
-        output = {"raman": (raman, None)}
+        output = {"raman": raman}
         return output
 
     def __str__(self):
@@ -200,7 +200,7 @@ class MDNet1(nn.Module):
         )
 
         raman = 45.0 * (a**2) + 7.0 * gamma_sq
-        output = {"raman": (raman, None)}
+        output = {"raman": raman}
         return output
 
     def __str__(self):
@@ -315,8 +315,8 @@ class MDNet2(nn.Module):
         combined = torch.cat([pooled_scalar, wl_emb, folds_emb, orient_emb], dim=-1)
 
         output = {}
-        raman, ram_fact = self.raman(combined, pooled_vec)
-        output["raman"] = (raman, ram_fact)
+        raman = self.raman(combined, pooled_vec)
+        output["raman"] = raman
 
         if ir_flag:
             ir, ir_fact = self.ir(pooled_vec[x.has_ir])
@@ -353,9 +353,8 @@ class MDNet2(nn.Module):
         # output = output / output.max(dim=-1, keepdim=True)[0]
 
         # scale = 100 * self.raman_scale(raw_tensors[:, :, 6])
-        scale = None
 
-        return output, scale
+        return output
 
     def ir(self, vec):
         raw_tensors = self.ir_head(vec).view(vec.shape[0], n_out, 3)
@@ -368,9 +367,8 @@ class MDNet2(nn.Module):
         output = output / output.max(dim=-1, keepdim=True)[0]
 
         # scale = 100 * self.ir_scale(raw_tensors[:, :, 3])
-        scale = None
 
-        return output, scale
+        return output
 
     def __str__(self):
         return "MDNet2"
@@ -471,7 +469,7 @@ class MDNetSide(nn.Module):
 
         raman = 45.0 * (a**2) + 7.0 * gamma_sq
 
-        output = {"raman": (raman, None)}
+        output = {"raman": raman}
         return output
 
     def __str__(self):

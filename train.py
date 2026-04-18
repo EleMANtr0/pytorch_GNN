@@ -1,23 +1,31 @@
-import json
-from time import time
-from datetime import datetime
-from tqdm import tqdm
 import argparse
+import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime
+from time import time
 
+import numpy as np
 import torch
 import torch.nn as nn
-from torch_geometric.loader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-import numpy as np
+from torch_geometric.loader import DataLoader
+from tqdm import tqdm
 
-from src.models import MDNet2, models_dict
+from config import data_path, logdir, models_dir, tblogdir
 from src.data.dataset import Crystals
+from src.models import MDNet2, models_dict
+from utils import (
+    DatasetContext,
+    DatasetExtractor,
+    VersionFromName,
+    load_data,
+    load_model,
+    loss_fn_dict,
+    validate_device,
+)
 from utils.loss import CombLoss, L1Loss, MultiTaskLoss
-from config import models_dir, data_path, logdir, tblogdir
-from utils import loss_fn_dict
-from utils import VersionFromName, DatasetContext, DatasetExtractor, validate_device, load_model, load_data
+
 
 # uv run workdir/train.py --epochs 100 --lr 1e-4 --eval_epochs 2 --batch_size 256 --val_batch_size 256 --inter True --n_embd 128 --num_heads 4 --drop 0.4 --hidden 128
 class Logger:
@@ -67,6 +75,7 @@ class Trainer:
     epochs: int
     logger: Logger
     criterion: CombLoss
+    raman_flag: bool = True
     ir_flag: bool = False
     lr_factor: float = None
     lr_patience: float = None
@@ -86,6 +95,8 @@ class Trainer:
         self.model = self.model.to(self.device)
         n_params = f"{model.n_params()/1e6:.2f}"
         model_name = str(self.model)
+        if not self.raman_flag:
+            model_name = model_name + "_ir"
         self.logger.log(f"{model_name} {n_params}M")
         self.model_name = model_name + f"_{n_params}M"
         tb_logdir = tblogdir / self.model_name
@@ -139,24 +150,29 @@ class Trainer:
         else:
             pbar = np.arange(self.epoch+1,self.epoch+self.epochs+1)
         try:
-
             for epoch in pbar:
                 self.model.train()
                 self.epoch = epoch
                 for batch in self.train_loader:
                     batch = batch.to(self.device, non_blocking=True)
                     pred = self.model(batch, ir_flag=self.ir_flag)
-                    raman, ram_scale = pred["raman"]
-                    if self.ir_flag:
-                        ir, ir_scale = pred["ir"]
+                    
+                    if self.raman_flag and self.ir_flag:
+                        raman = pred["raman"]
+                        ir = pred["ir"]
                         if ir.shape[0] != 0:
                             preds = (raman, ir)
                             targets = (batch.y, batch.ir_y[batch.has_ir])
                             loss = self.criterion(preds, targets)
                         else:
                             loss = self.criterion.loss_fn(raman, batch.y)
-                    else:
+                    elif self.raman_flag:
+                        raman = pred["raman"]
                         loss = self.criterion(raman, batch.y)
+                    elif self.ir_flag:
+                        ir = pred["ir"]
+                        loss = self.criterion(ir, batch.ir_y)
+                    
                     self.optimizer.zero_grad()
                     loss.backward()
                     nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -237,6 +253,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_version", nargs="?")
     parser.add_argument("--dataset", nargs="?", default="v8.pt")
     parser.add_argument("--inter", action="store_true")
+    parser.add_argument("--raman", action="store_true")
     parser.add_argument("--ir", action="store_true")
 
     parser.add_argument("--n_embd", nargs="?", default=64, type=int)
@@ -290,7 +307,8 @@ if __name__ == "__main__":
         dataset=Crystals(dataset_path, [514, 532, 780, 785]),
         test_size=0.3,
         inference=False,
-        seed=0
+        seed=0,
+        has_raman=args.raman
     ))
     train_dataset, val_dataset, test_dataset = load_data(extractor)
 
@@ -304,6 +322,7 @@ if __name__ == "__main__":
         epochs=args.epochs,
         logger=logger,
         criterion=loss_fn,
+        raman_flag=args.raman,
         ir_flag=args.ir,
         lr_factor=args.lr_factor, 
         lr_patience=args.lr_patience,
