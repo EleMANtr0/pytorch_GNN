@@ -95,8 +95,6 @@ class Trainer:
         self.model = self.model.to(self.device)
         n_params = f"{model.n_params()/1e6:.2f}"
         model_name = str(self.model)
-        if not self.raman_flag:
-            model_name = model_name + "_ir"
         self.logger.log(f"{model_name} {n_params}M")
         self.model_name = model_name + f"_{n_params}M"
         tb_logdir = tblogdir / self.model_name
@@ -139,6 +137,8 @@ class Trainer:
             self.models_dir = models_dir / f'{model_name}_{self.loss_name}'
         else:
             self.models_dir = models_dir / f'{model_name}'
+        if not self.raman_flag:
+            self.model_name += "_ir"
         self.models_dir.mkdir(parents=True,exist_ok=True)
         
         conf = self.models_dir / f"{n_params}M.config"
@@ -224,7 +224,7 @@ class Trainer:
         with torch.inference_mode():
             for batch in loader:
                 batch = batch.to(self.device, non_blocking=True)
-                pred = self.model(batch)
+                pred = self.model(batch, ir_flag=self.ir_flag)
                 if self.raman_flag:
                     out  = pred["raman"]
                     target = batch.y
@@ -294,9 +294,11 @@ if __name__ == "__main__":
         loss_fn = loss_fn_dict["".join(losses[0])]
     else:
         loss_fn = CombLoss(*[(1, loss_fn_dict[loss]) for loss in losses])
-    if args.ir:
-        logger.log("using ir spectra")
+    if args.ir and args.raman:
+        logger.log("using multi-task spectra")
         loss_fn = MultiTaskLoss(loss_fn).to(device)
+    elif args.ir:
+        logger.log("using ir spectra")
     loss_name = str(loss_fn)
 
     if args.model_version is not None:
@@ -309,11 +311,10 @@ if __name__ == "__main__":
     dataset_path = data_path / args.dataset
 
     extractor = DatasetExtractor(DatasetContext(
-        dataset=Crystals(dataset_path, [514, 532, 780, 785]),
+        dataset=Crystals(dataset_path, [514, 532, 780, 785], has_raman=args.raman),
         test_size=0.3,
         inference=False,
         seed=0,
-        has_raman=args.raman
     ))
     train_dataset, val_dataset, test_dataset = load_data(extractor)
 

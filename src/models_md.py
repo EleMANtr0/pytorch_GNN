@@ -245,12 +245,6 @@ class MDNet2(nn.Module):
             hidden_emb,
             args["dropout"],
         )
-        self.folds_emb = FoldsEmb(
-            args["embedding_dimension"],
-            args["hidden_size"],
-            hidden_emb,
-            args["dropout"],
-        )
         self.orientation_head = nn.Sequential(
             nn.Linear(7, args["hidden_size"]),
             nn.SiLU(),
@@ -259,22 +253,20 @@ class MDNet2(nn.Module):
         )
 
         self.raman_head = nn.Sequential(
-            nn.Linear(
-                args["embedding_dimension"] + hidden_emb * 3, args["hidden_size"]
-            ),
+            nn.Linear( args["embedding_dimension"] + hidden_emb * 2 + args["hidden_size"], args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
             nn.Linear(args["hidden_size"], n_out * 7),
         )
 
-        self.ir_head = nn.Sequential(
+        self.ir_features = nn.Sequential(
             nn.Linear(args["embedding_dimension"], args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
-            nn.Dropout(args["dropout"]),
-            nn.Linear(args["hidden_size"], n_out * 3),
+            nn.Dropout(args["dropout"])
         )
+        self.ir_head = nn.Linear(args["hidden_size"], n_out * 3)
 
     def forward(self, x, ir_flag=False):
         z = x.z
@@ -283,13 +275,13 @@ class MDNet2(nn.Module):
         wl = x.wl.view(-1, 1)
         box = params_to_matrix(x.cell_params)
         batch_size = wl.shape[0]
-        if hasattr(x, "folds"):
-            folds = x.folds
-        else:
-            folds = torch.zeros(batch_size, 4, device=wl.device).long()
-            folds[:, -1] = 1
+        # if hasattr(x, "folds"):
+        #     folds = x.folds
+        # else:
+        #     folds = torch.zeros(batch_size, 4, device=wl.device).long()
+        #     folds[:, -1] = 1
+        # folds_emb = self.folds_emb(folds)
         wl_emb = self.wl_emb(wl)
-        folds_emb = self.folds_emb(folds)
         cond_vec = (
             x.cond_vec
             if hasattr(x, "cond_vec")
@@ -302,20 +294,22 @@ class MDNet2(nn.Module):
         pooled_scalar = global_mean_pool(scalar_feats, batch)
         # vec_dim = vec_feats.shape[2]
         # pooled_vec = global_mean_pool( vec_feats.reshape(-1, 3 * vec_dim), batch).reshape(-1, 3, vec_dim)
-        combined = torch.cat([pooled_scalar, wl_emb, folds_emb, orient_emb], dim=-1)
+        ir_features = self.ir_features(pooled_scalar)
+        combined = torch.cat([pooled_scalar, wl_emb, orient_emb, ir_features], dim=-1)
 
         output = {}
+
+        if ir_flag:
+            ir = self.ir(ir_features[x.has_ir])
+            output["ir"] = ir
+
         raman = self.raman(combined)
         output["raman"] = raman
 
-        if ir_flag:
-            ir = self.ir(combined[x.has_ir])
-            output["ir"] = ir
-
         return output
 
-    def raman(self, scalar):
-        raw_tensors = self.raman_head(scalar).view(scalar.shape[0], n_out, 7)
+    def raman(self, x):
+        raw_tensors = self.raman_head(x).view(x.shape[0], n_out, 7)
 
         R_xx = raw_tensors[:, :, 0]
         R_yy = raw_tensors[:, :, 1]

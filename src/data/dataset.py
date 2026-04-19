@@ -16,16 +16,20 @@ class Crystals(InMemoryDataset):
         transform = None,
         pre_transform = None,
         pre_filter = None,
+        has_raman = True
     ):
         super().__init__(root, transform, pre_transform, pre_filter)
         self.data, self.slices = torch.load(root, weights_only=False)
+        
+        if not has_raman:
+            valid_indices = torch.where(self._data.has_ir.view(-1).bool())[0].tolist()
+            valid_graphs = [self.get(i) for i in valid_indices]
+            self.data, self.slices = self.collate(valid_graphs)
+
         if wl_list is None:
             self.wl_list = [514, 532, 780, 785]
         else:
             self.wl_list = list(np.array([wl_list]).flatten())
-    
-    def get_only_ir(self):
-        return self[self._data.has_ir.view(-1)]
 
     def split(self, test_size=0.3, seed=0):
         all_dict = defaultdict(list)

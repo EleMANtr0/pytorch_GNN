@@ -16,11 +16,7 @@ class DatasetContext:
     test_size: int
     inference: bool = False
     seed: int = 0
-    has_raman: bool = True
 
-    def __post_init__(self):
-        if not self.has_raman:
-            self.dataset = self.dataset.get_only_ir()
 
 class Converter(Protocol):
     def convert(self, preds: list[str] | None) -> None: ...

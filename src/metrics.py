@@ -61,7 +61,7 @@ def kldiv(model,device,dataloader,wl=None, is_schnet=False):
                 if round(100 * data.wl.item()) in wl:
                     data.to(device)
                     pred = model(data)
-                    raman, scale = pred["raman"]
+                    raman = pred["raman"]
                     curr_loss = kl_loss(raman, data.y)
                     loss += curr_loss
                     count += 1

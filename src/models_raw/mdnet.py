@@ -14,7 +14,7 @@ from torchmdnet.models.utils import (
     act_class_mapping,
     scatter,
 )
-from torchmdnet.utils import deprecated_class
+
 
 class SwiGLU(nn.Module):  # custom
     def __init__(self, in_features, hidden_features, out_features, dtype=torch.float32):
