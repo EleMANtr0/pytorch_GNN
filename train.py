@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from time import time
 
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import numpy as np
 import torch
 import torch.nn as nn

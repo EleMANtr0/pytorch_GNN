@@ -1,6 +1,6 @@
 from .models_md import MDNet, MDNet1, MDNet2, MDNetSide
 from .models_painn import PaiNN_raman0, PaiNN_raman2, PaiNN_raman3
-from .models_matformer import MatFormer
+from .models_matformer import Matformer
 
 
 models_dict = {
@@ -11,5 +11,5 @@ models_dict = {
     "painn": PaiNN_raman0,
     "painn2": PaiNN_raman2,
     "painn3": PaiNN_raman3,
-    "matformer": MatFormer
+    "Matformer": Matformer
 }
