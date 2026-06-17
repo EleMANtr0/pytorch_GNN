@@ -1,11 +1,12 @@
 import argparse
+import gc
 import json
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from time import time
 
-import os
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import numpy as np
@@ -39,7 +40,9 @@ class Logger:
         dt_string = datetime.now().strftime("%H:%M")
         day_dir = logdir / datetime.now().strftime("%m_%d")
         day_dir.mkdir(parents=True, exist_ok=True)
-        logging.basicConfig(filename=day_dir / f"train_log{dt_string}.log", format="%(message)s")
+        logging.basicConfig(
+            filename=day_dir / f"train_log{dt_string}.log", format="%(message)s"
+        )
 
     def add_logs(self, sum_wr: SummaryWriter, epoch, loss, name):
         sum_wr.add_scalar(f"{name}/loss", loss, epoch)
@@ -57,6 +60,7 @@ class DynamicStats:
     train_loss: dict = None
     val_loss: dict = None
 
+
 class DummyScheduler:
     def __init__(self, optimizer: torch.optim.Optimizer):
         self.optimizer = optimizer
@@ -67,9 +71,10 @@ class DummyScheduler:
     def get_last_lr(self):
         return [self.optimizer.param_groups[0]["lr"]]
 
+
 @dataclass
 class Trainer:
-    model: nn.Module 
+    model: nn.Module
     device: torch.device
     batch_size: int
     lr: float
@@ -91,75 +96,98 @@ class Trainer:
     val_batch_size: int = 256
     num_workers: int = 4
     interactive: bool = True
-    ir_priority: float = 1.0
-    scale_priority: float = 1.0
+    aux_weight: float = 0.3
 
     def __post_init__(self):
         self.model = self.model.to(self.device)
-        n_params = f"{model.n_params()/1e6:.2f}"
+        n_params = f"{model.n_params() / 1e6:.2f}"
         model_name = str(self.model)
         self.logger.log(f"{model_name} {n_params}M")
         self.model_name = model_name + f"_{n_params}M"
         tb_logdir = tblogdir / self.model_name
-        tb_logdir.mkdir(exist_ok=True,parents=True)
+        tb_logdir.mkdir(exist_ok=True, parents=True)
         self.sum_wr = SummaryWriter(log_dir=tb_logdir)
         self.best_stats = DynamicStats(best_loss=0.009)
 
-        self.train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, 
-                            num_workers=self.num_workers, shuffle=True, 
-                            pin_memory=True, persistent_workers=True)
+        self.train_loader = DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            pin_memory=True,
+            persistent_workers=True,
+        )
         if self.val_dataset is not None:
-            self.val_loader = DataLoader(self.val_dataset, batch_size=self.val_batch_size, 
-                                num_workers=self.num_workers, shuffle=True, 
-                                pin_memory=True, persistent_workers=True)
-        self.train_val_loader = DataLoader(self.train_dataset, batch_size=self.val_batch_size, 
-                                num_workers=self.num_workers, shuffle=True, 
-                                pin_memory=True, persistent_workers=True)
-        
+            self.val_loader = DataLoader(
+                self.val_dataset,
+                batch_size=self.val_batch_size,
+                num_workers=self.num_workers,
+                shuffle=True,
+                pin_memory=True,
+                persistent_workers=True,
+            )
+        self.train_val_loader = DataLoader(
+            self.train_dataset,
+            batch_size=self.val_batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            pin_memory=True,
+            persistent_workers=True,
+        )
+
         self.scale_criterion = L1Loss()
         self.val_criterion = loss_fn_dict["kldiv"]
         params = list(self.model.parameters())
         if hasattr(self.criterion, "log_vars"):
             params += list(self.criterion.parameters())
-        self.optimizer = torch.optim.AdamW(params, lr=self.lr, 
-                                    weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.AdamW(
+            params, lr=self.lr, weight_decay=self.weight_decay
+        )
         if self.eta_min is not None:
-            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, 
-                T_max=self.decay_steps if self.decay_steps is not None else self.epochs, 
-                eta_min=self.eta_min)
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=self.decay_steps if self.decay_steps is not None else self.epochs,
+                eta_min=self.eta_min,
+            )
             self.scheduler_name = "cos"
         elif self.lr_factor is not None and self.lr_patience is not None:
-            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 
-                factor=self.lr_factor, patience=self.lr_patience)
+            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimizer, factor=self.lr_factor, patience=self.lr_patience
+            )
             self.scheduler_name = "plateau"
         else:
             self.scheduler = DummyScheduler(self.optimizer)
             self.scheduler_name = None
 
         if self.loss_name is not None:
-            self.models_dir = models_dir / f'{model_name}_{self.loss_name}'
+            self.models_dir = models_dir / f"{model_name}_{self.loss_name}"
         else:
-            self.models_dir = models_dir / f'{model_name}'
+            self.models_dir = models_dir / f"{model_name}"
         if not self.raman_flag:
             self.model_name += "_ir"
-        self.models_dir.mkdir(parents=True,exist_ok=True)
-        
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+
         conf = self.models_dir / f"{n_params}M.config"
         conf.write_text(json.dumps(self.model.get_args(), indent=1))
 
     def train(self):
+        iters = max(1, 256 // self.batch_size)
         if self.interactive:
-            pbar = tqdm(np.arange(self.epoch+1,self.epoch+self.epochs+1), mininterval=1.0)
+            pbar = tqdm(
+                np.arange(self.epoch + 1, self.epoch + self.epochs + 1), mininterval=1.0
+            )
         else:
-            pbar = np.arange(self.epoch+1,self.epoch+self.epochs+1)
+            pbar = np.arange(self.epoch + 1, self.epoch + self.epochs + 1)
         try:
             for epoch in pbar:
                 self.model.train()
                 self.epoch = epoch
-                for batch in self.train_loader:
+                self.optimizer.zero_grad()
+                
+                for i, batch in enumerate(self.train_loader):
                     batch = batch.to(self.device, non_blocking=True)
                     pred = self.model(batch, ir_flag=self.ir_flag)
-                    
+
                     if self.raman_flag and self.ir_flag:
                         raman = pred["raman"]
                         ir = pred["ir"]
@@ -168,53 +196,76 @@ class Trainer:
                             targets = (batch.y, batch.ir_y[batch.has_ir])
                             loss = self.criterion(preds, targets)
                         else:
-                            loss = self.criterion.loss_fn(raman, batch.y)
+                            base_crit = getattr(
+                                self.criterion, "loss_fn", self.criterion
+                            )
+                            loss = base_crit(raman, batch.y)
                     elif self.raman_flag:
                         raman = pred["raman"]
                         loss = self.criterion(raman, batch.y)
                     elif self.ir_flag:
                         ir = pred["ir"]
                         loss = self.criterion(ir, batch.ir_y)
-                    
-                    self.optimizer.zero_grad()
+
+                    if self.raman_flag and "raman2" in pred and self.aux_weight > 0:
+                        base_crit = getattr(self.criterion, "loss_fn", self.criterion)
+                        loss_aux = base_crit(pred["raman2"], batch.y)
+                        loss = loss + self.aux_weight * loss_aux
+
+                    loss = loss / iters
                     loss.backward()
-                    nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                    self.optimizer.step()
+
+                    if ((i + 1) % iters == 0) or ((i + 1) == len(self.train_loader)):
+                        nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                        self.optimizer.step()
+                        self.optimizer.zero_grad()
+
                 if self.scheduler_name == "cos":
                     self.scheduler.step()
-                
+
                 torch.save(self.model.state_dict(), self.models_dir / f"{self.model_name}_latest.pt")
                 if self.interactive:
                     pbar.set_description(f"lr: {self.scheduler.get_last_lr()[0]:.2e}")
                 if self.epoch % self.eval_epochs == 0:
                     self.full_validate()
+                    gc.collect()
+                    torch.cuda.empty_cache()
                     if self.scheduler_name == "plateau":
                         self.scheduler.step(self.val_loss)
-                
+
         except KeyboardInterrupt:
             self.logger.log(f"\ninterrupted on epoch {self.epoch}")
             self.logger.log(f"last train loss: {self.train_loss:.5f}")
-    
+
     def full_validate(self):
 
         logger.log(f"epoch {self.epoch}")
         self.train_loss = self.validate_model(self.train_val_loader)
-        self.logger.add_logs(self.sum_wr, epoch=self.epoch, loss=self.train_loss, name="train")
+        self.logger.add_logs(
+            self.sum_wr, epoch=self.epoch, loss=self.train_loss, name="train"
+        )
         self.logger.log(f"train loss: {self.train_loss:.5f}")
 
         if self.val_dataset is not None:
             self.val_loss = self.validate_model(self.val_loader)
-            self.logger.add_logs(self.sum_wr, epoch=self.epoch, loss=self.val_loss, name="val")
+            self.logger.add_logs(
+                self.sum_wr, epoch=self.epoch, loss=self.val_loss, name="val"
+            )
             self.logger.log(f"validation loss: {self.val_loss:.5f}")
 
             self.update_best()
 
     def update_best(self):
         best_loss = self.best_stats.best_loss
-        if self.val_loss < best_loss or np.allclose(self.val_loss,best_loss) and self.epoch > 0:
-
+        if (
+            self.val_loss < best_loss
+            or np.allclose(self.val_loss, best_loss)
+            and self.epoch > 0
+        ):
             self.best_stats.best_path = f"{self.model_name}_{self.val_loss:.4f}_best.pt"
-            torch.save(self.model.state_dict(), self.models_dir / self.best_stats.best_path)
+            torch.save(
+                self.model.state_dict(), self.models_dir / self.best_stats.best_path
+            )
             self.logger.log(f"saving model - {self.best_stats.best_path}")
 
             self.best_stats.best_loss = self.val_loss
@@ -229,7 +280,7 @@ class Trainer:
                 batch = batch.to(self.device, non_blocking=True)
                 pred = self.model(batch, ir_flag=self.ir_flag)
                 if self.raman_flag:
-                    out  = pred["raman"]
+                    out = pred["raman"]
                     target = batch.y
                 else:
                     out = pred["ir"]
@@ -250,7 +301,7 @@ if __name__ == "__main__":
     parser.add_argument("--eval_epochs", nargs="?", default=10, type=int)
     parser.add_argument("--batch_size", nargs="?", default=128, type=int)
     parser.add_argument("--val_batch_size", nargs="?", default=256, type=int)
-    parser.add_argument("--loss_fn", nargs="*", default=["mse","cossim"], type=str)
+    parser.add_argument("--loss_fn", nargs="*", default=["mse", "cossim"], type=str)
     parser.add_argument("--lr_factor", nargs="?", type=float)
     parser.add_argument("--lr_patience", nargs="?", type=int)
     parser.add_argument("--eta_min", nargs="?", type=float)
@@ -265,16 +316,14 @@ if __name__ == "__main__":
     parser.add_argument("--ir", action="store_true")
 
     parser.add_argument("--n_embd", nargs="?", default=64, type=int)
+    parser.add_argument("--hidden_emb", nargs="?", default=64, type=int)
     parser.add_argument("--num_heads", nargs="?", default=4, type=int)
     parser.add_argument("--neighbor_emb", nargs="?", default=True, type=bool)
     parser.add_argument("--hidden", nargs="?", default=128, type=int)
     parser.add_argument("--drop", nargs="?", default=0.3, type=float)
     parser.add_argument("--num_layers", nargs="?", default=4, type=int)
     parser.add_argument("--cutoff", nargs="?", default=10.0, type=float)
-
-    parser.add_argument("--scale_priority", nargs="?", default=0.0, type=float)
-    parser.add_argument("--ir_priority", nargs="?", default=1.0, type=float)
-    
+    parser.add_argument("--aux", nargs="?", default=0.0, type=float)
 
     args = parser.parse_args()
     logger = Logger(interactive=args.inter)
@@ -288,7 +337,8 @@ if __name__ == "__main__":
         "neighbor_embedding": args.neighbor_emb,
         "hidden_size": args.hidden,
         "dropout": args.drop,
-        "num_layers": args.num_layers
+        "num_layers": args.num_layers,
+        "hidden_emb": args.hidden_emb,
     }
 
     model_name = args.model_name
@@ -308,47 +358,50 @@ if __name__ == "__main__":
         model = models_dict[args.model_version](model_args).to(device)
     elif model_name is not None:
         version = VersionFromName(model_name, loss_name=loss_name)
-        model = load_model(model_version=version, model_name=model_name, args=model_args)
+        model = load_model(
+            model_version=version, model_name=model_name, args=model_args
+        )
     else:
         model = MDNet2(model_args).to(device)
     dataset_path = data_path / args.dataset
 
-    extractor = DatasetExtractor(DatasetContext(
-        dataset=Crystals(dataset_path, [514, 532, 780, 785], has_raman=args.raman),
-        test_size=0.3,
-        inference=False,
-        seed=0,
-    ))
+    extractor = DatasetExtractor(
+        DatasetContext(
+            dataset=Crystals(dataset_path, [514, 532, 780, 785], has_raman=args.raman),
+            test_size=0.3,
+            inference=False,
+            seed=0,
+        )
+    )
     train_dataset, val_dataset, test_dataset = load_data(extractor)
 
     trainer = Trainer(
-        model=model, 
-        device=device, 
-        batch_size=args.batch_size, 
-        lr=args.lr, 
+        model=model,
+        device=device,
+        batch_size=args.batch_size,
+        lr=args.lr,
         weight_decay=args.weight_decay,
-        train_dataset=train_dataset, 
+        train_dataset=train_dataset,
         epochs=args.epochs,
         logger=logger,
         criterion=loss_fn,
         raman_flag=args.raman,
         ir_flag=args.ir,
-        lr_factor=args.lr_factor, 
+        lr_factor=args.lr_factor,
         lr_patience=args.lr_patience,
         eta_min=args.eta_min,
         decay_steps=args.decay_steps,
         loss_name=loss_name,
         eval_epochs=args.eval_epochs,
-        epoch=args.epoch, 
+        epoch=args.epoch,
         val_dataset=val_dataset,
         val_batch_size=args.val_batch_size,
         num_workers=4,
         interactive=args.inter,
-        ir_priority=args.ir_priority,
-        scale_priority=args.scale_priority
-        )
+        aux_weight=args.aux,
+    )
     end = time()
-    logger.log(f"elapsed time - {end-start:.1f}s. starting training...")
+    logger.log(f"elapsed time - {end - start:.1f}s. starting training...")
     trainer.train()
 
     stats = trainer.best_stats
@@ -357,5 +410,6 @@ if __name__ == "__main__":
     val_loss = stats.val_loss
     train_loss = stats.train_loss
 
-    logger.log(f"\t\ttrain\t\t|\tvalidation\n"
-        f"kl_loss\t\t{train_loss:.4f}\t|\t{val_loss:.4f}\n")
+    logger.log(
+        f"\t\ttrain\t\t|\tvalidation\nkl_loss\t\t{train_loss:.4f}\t|\t{val_loss:.4f}\n"
+    )

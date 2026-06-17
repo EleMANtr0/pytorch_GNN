@@ -213,13 +213,15 @@ class MDNet1(nn.Module):
 
 
 class MDNet2(nn.Module):
-    def __init__(self, args=None):
+    def __init__(self, args: dict | None = None):
         super().__init__()
         self.args = args
         if self.args is not None:
             for k, v in args.items():
                 base_args[k] = v
-        hidden_emb = 64
+        else:
+            args = {}
+        hidden_emb = args.get("hidden_emb", 64)
         args = base_args
 
         self.body = TorchMD_ET(
@@ -253,7 +255,10 @@ class MDNet2(nn.Module):
         )
 
         self.raman_head = nn.Sequential(
-            nn.Linear( args["embedding_dimension"] + hidden_emb * 2 + args["hidden_size"], args["hidden_size"]),
+            nn.Linear(
+                args["embedding_dimension"] + hidden_emb * 2 + args["hidden_size"],
+                args["hidden_size"],
+            ),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
             nn.Dropout(args["dropout"]),
@@ -264,7 +269,7 @@ class MDNet2(nn.Module):
             nn.Linear(args["embedding_dimension"], args["hidden_size"]),
             nn.LayerNorm(args["hidden_size"]),
             nn.SiLU(),
-            nn.Dropout(args["dropout"])
+            nn.Dropout(args["dropout"]),
         )
         self.ir_head = nn.Linear(args["hidden_size"], n_out * 3)
 
@@ -275,12 +280,6 @@ class MDNet2(nn.Module):
         wl = x.wl.view(-1, 1)
         box = params_to_matrix(x.cell_params)
         batch_size = wl.shape[0]
-        # if hasattr(x, "folds"):
-        #     folds = x.folds
-        # else:
-        #     folds = torch.zeros(batch_size, 4, device=wl.device).long()
-        #     folds[:, -1] = 1
-        # folds_emb = self.folds_emb(folds)
         wl_emb = self.wl_emb(wl)
         cond_vec = (
             x.cond_vec
@@ -290,12 +289,10 @@ class MDNet2(nn.Module):
         cond_vec[:, 0] = 1 - cond_vec[:, 0]
         orient_emb = self.orientation_head(cond_vec)
 
-        scalar_feats, vec_feats, *_ = self.body( z, pos, batch, box=box)
+        scalar_feats, vec_feats, *_ = self.body(z, pos, batch, box=box)
         pooled_scalar = global_mean_pool(scalar_feats, batch)
-        # vec_dim = vec_feats.shape[2]
-        # pooled_vec = global_mean_pool( vec_feats.reshape(-1, 3 * vec_dim), batch).reshape(-1, 3, vec_dim)
         ir_features = self.ir_features(pooled_scalar)
-        combined = torch.cat([pooled_scalar, wl_emb, orient_emb, ir_features], dim=-1)
+        combined = torch.cat([pooled_scalar, wl_emb, orient_emb, ir_features.detach()], dim=-1)
 
         output = {}
 
@@ -332,8 +329,6 @@ class MDNet2(nn.Module):
         output = output + background
         output = output / output.max(dim=-1, keepdim=True)[0]
 
-        # scale = 100 * self.raman_scale(raw_tensors[:, :, 6])
-
         return output
 
     def ir(self, x):
@@ -346,12 +341,153 @@ class MDNet2(nn.Module):
         output = mu_x**2 + mu_y**2 + mu_z**2
         output = output / output.max(dim=-1, keepdim=True)[0]
 
-        # scale = 100 * self.ir_scale(raw_tensors[:, :, 3])
-
         return output
 
     def __str__(self):
         return "MDNet2"
+
+    def n_params(self):
+        return sum([p.numel() for p in self.parameters()])
+
+    def get_args(self):
+        return self.args
+
+
+class MDNet3(nn.Module):
+    def __init__(self, args: dict | None = None):
+        super().__init__()
+        self.args = args
+        if self.args is not None:
+            for k, v in args.items():
+                base_args[k] = v
+        else:
+            args = {}
+        hidden_emb = args.get("hidden_emb", 256)
+        args = base_args
+
+        self.body = TorchMD_ET(
+            hidden_channels=args["embedding_dimension"],
+            num_layers=args["num_layers"],
+            num_rbf=args["num_rbf"],
+            rbf_type=args["rbf_type"],
+            trainable_rbf=args["trainable_rbf"],
+            activation=args["activation"],
+            attn_activation=args["attn_activation"],
+            neighbor_embedding=args["neighbor_embedding"],
+            num_heads=args["num_heads"],
+            distance_influence=args["distance_influence"],
+            cutoff_lower=args["cutoff_lower"],
+            cutoff_upper=args["cutoff_upper"],
+            max_z=args["max_z"],
+            max_num_neighbors=args["max_num_neighbors"],
+        )
+
+        self.wl_emb = WaveLenEmb(
+            args["embedding_dimension"],
+            args["hidden_size"],
+            hidden_emb,
+            args["dropout"],
+        )
+        self.orientation_head = nn.Sequential(
+            nn.Linear(7, args["hidden_size"]),
+            nn.SiLU(),
+            nn.LayerNorm(args["hidden_size"]),
+            nn.Linear(args["hidden_size"], hidden_emb),
+        )
+
+        self.raman_head = nn.Sequential(
+            nn.Linear(
+                args["embedding_dimension"] + hidden_emb * 2 + n_out,
+                args["hidden_size"],
+            ),
+            nn.LayerNorm(args["hidden_size"]),
+            nn.SiLU(),
+            nn.Dropout(args["dropout"]),
+            nn.Linear(args["hidden_size"], n_out * 7),
+        )
+
+        self.ir_features = nn.Sequential(
+            nn.Linear(args["embedding_dimension"], args["hidden_size"]),
+            nn.LayerNorm(args["hidden_size"]),
+            nn.SiLU(),
+            nn.Dropout(args["dropout"]),
+        )
+        self.ir_head = nn.Linear(args["hidden_size"], n_out * 3)
+        self.final_linear = nn.Linear(n_out * 2, n_out)
+
+    def forward(self, x, ir_flag=True):
+        z = x.z
+        pos = x.pos
+        batch = x.batch
+        wl = x.wl.view(-1, 1)
+        box = params_to_matrix(x.cell_params)
+        batch_size = wl.shape[0]
+        wl_emb = self.wl_emb(wl)
+        cond_vec = (
+            x.cond_vec
+            if hasattr(x, "cond_vec")
+            else torch.zeros(batch_size, 7, device=wl.device)
+        )
+        cond_vec[:, 0] = 1 - cond_vec[:, 0]
+        orient_emb = self.orientation_head(cond_vec)
+
+        scalar_feats, vec_feats, *_ = self.body(z, pos, batch, box=box)
+        pooled_scalar = global_mean_pool(scalar_feats, batch)
+        # vec_dim = vec_feats.shape[2]
+        # pooled_vec = global_mean_pool( vec_feats.reshape(-1, 3 * vec_dim), batch).reshape(-1, 3, vec_dim)
+        ir_features = self.ir_features(pooled_scalar)
+        ir = self.ir(ir_features)
+        combined = torch.cat([pooled_scalar, wl_emb, orient_emb, ir.detach()], dim=-1)
+
+        output = {}
+
+        if ir_flag:
+            output["ir"] = ir[x.has_ir]
+
+        raman1, raman2 = self.raman(combined)
+        output["raman"] = raman1
+        output["raman2"] = raman2
+
+        return output
+
+    def raman(self, x):
+        raw_tensors = self.raman_head(x).view(x.shape[0], n_out, 6)
+
+        R_xx = raw_tensors[:, :, 0]
+        R_yy = raw_tensors[:, :, 1]
+        R_zz = raw_tensors[:, :, 2]
+        R_xy = raw_tensors[:, :, 3]
+        R_yz = raw_tensors[:, :, 4]
+        R_xz = raw_tensors[:, :, 5]
+
+        a = (R_xx + R_yy + R_zz) / 3.0
+        gamma_sq = 0.5 * (
+            (R_xx - R_yy) ** 2
+            + (R_yy - R_zz) ** 2
+            + (R_zz - R_xx) ** 2
+            + 6.0 * (R_xy**2 + R_yz**2 + R_xz**2)
+        )
+
+        output = 45.0 * (a**2) + 7.0 * gamma_sq
+        raman = self.final_linear(torch.cat((output, bg), dim=-1))
+        raman = raman / raman.max(dim=-1, keepdim=True)[0]
+
+        return raman, output
+
+    def ir(self, x):
+        raw_tensors = self.ir_head(x).view(x.shape[0], n_out, 3)
+
+        mu_x = raw_tensors[:, :, 0]
+        mu_y = raw_tensors[:, :, 1]
+        mu_z = raw_tensors[:, :, 2]
+
+        output = mu_x**2 + mu_y**2 + mu_z**2
+        output = output / output.max(dim=-1, keepdim=True)[0]
+
+        return output
+
+    def __str__(self):
+        return "MDNet3"
 
     def n_params(self):
         return sum([p.numel() for p in self.parameters()])

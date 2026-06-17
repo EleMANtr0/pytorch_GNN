@@ -6,7 +6,7 @@ from utils import loss_fn_dict
 from src.data.dataset import Crystals
 from utils.loss import CombLoss, MultiTaskLoss
 from src.metrics import kldiv
-from src.visualization.plotting import save_all
+from src.visualization.plotting import save_all, save_all_ir
 from torch_geometric.loader import DataLoader
 
 from utils import (
@@ -23,8 +23,9 @@ parser.add_argument("--batch_size", nargs="?", default=128, type=int)
 parser.add_argument("--loss_fn", nargs="*", default=["mse", "cossim"], type=str)
 parser.add_argument("--device", nargs="?")
 parser.add_argument("--model_name", nargs="?")
-parser.add_argument("--dataset", nargs="?", default="v7.pt")
+parser.add_argument("--dataset", nargs="?", default="v8.pt")
 parser.add_argument("--ir", action="store_true")
+parser.add_argument("--draw_ir", action="store_true")
 # parser.add_argument("--n_embd", nargs="?", default=64, type=int)
 # parser.add_argument("--num_heads", nargs="?", default=4, type=int)
 # parser.add_argument("--neighbor_emb", nargs="?", default=True, type=bool)
@@ -57,6 +58,7 @@ loss_name = str(loss_fn)
 
 version = VersionFromName(model_name, loss_name=loss_name)
 model = load_model(model_version=version, model_name=model_name)
+model.eval()
 dataset_path = data_path / args.dataset
 
 context = DatasetContext(
@@ -86,5 +88,7 @@ kl_div = kldiv(model, device, val_dataloader, 514)[0]
 print(kl_div)
 (predict_dir_val.parent / "kldiv_514.txt").write_text(str(kl_div))
 
-
-save_all(model, device, val_dataset, predict_dirs_val, verbose=False)
+if args.draw_ir:
+    save_all_ir(model, device, val_dataset, predict_dirs_val, verbose=False)
+else:
+    save_all(model, device, val_dataset, predict_dirs_val, verbose=False)

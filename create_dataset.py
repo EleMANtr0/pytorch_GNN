@@ -172,8 +172,19 @@ for i in [514, 532, 780, 785]:
             new_graphs_pool[key] = []
         new_graphs_pool[key].append(g)
 
+v8_data, _ = torch.load("data/processed/v8.pt")
+v8_keys = list(zip(v8_data.mineral, [round(w, 3) for w in v8_data.wl.view(-1).tolist()]))
+
 data_list = []
 wavelengths = []
+
+for m, w in v8_keys:
+    key = (m, w)
+    if key in new_graphs_pool and new_graphs_pool[key]:
+        graph = new_graphs_pool[key].pop(0)
+        graph.wl = torch.tensor([w], dtype=torch.float32)
+        data_list.append(graph)
+        wavelengths.append(w)
 
 for (mineral, wl), graphs in new_graphs_pool.items():
     for graph in graphs:
@@ -213,4 +224,4 @@ data.has_ir = torch.stack([torch.Tensor(hi) for hi in data.has_ir]).type(
     torch.BoolTensor
 )
 
-torch.save((data, slices), "data/processed/v8.pt")
+torch.save((data, slices), "data/processed/v9.pt")
