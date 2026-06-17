@@ -3,6 +3,7 @@ from glob import glob
 import warnings
 import re
 
+from scipy.interpolate import interp1d
 from utils import qxrd_apc as apc
 
 
@@ -11,7 +12,7 @@ def load_raman_data(
         raman_data_directory_path='data/raw/raman/',
         wavelength=None,
         verbose=False,
-        zero_pad=True):
+        zero_pad=False):
 
     if wavelength:
         file_paths_list = glob(raman_data_directory_path+f'*/*__{wavelength}__*.txt')
@@ -50,7 +51,7 @@ pattern = re.compile(r"##ORIENTATION.*?[\(\[]\s*([-\d\s\.]+)\s*[\)\]].*?[\(\[]\s
 def load_single_raman_spectrum(
         model_wavenumber_values,
         file_path,
-        zero_pad=True):
+        zero_pad=False):
     mineral_name = file_path.split('\\')[-1].split('/')[-1].split('__')[0]
     
     raw_id_part = file_path.split('__')[1]
@@ -78,11 +79,12 @@ def load_single_raman_spectrum(
     return mineral_name, rruff_id, wavelength, raman_spectrum, max_intensity, orientation_vec
 
 
-def process_raman_spectrum(xy,model_twotheta_values,zero_pad=True):
+def process_raman_spectrum(xy,model_twotheta_values,zero_pad=False):
     if zero_pad:
         intensity_interpolated = np.interp(model_twotheta_values,xy[0],xy[1],left=0.0,right=0.0)
     else:
-        intensity_interpolated = np.interp(model_twotheta_values,xy[0],xy[1])
+        f = interp1d(xy[0], xy[1], fill_value="extrapolate")
+        intensity_interpolated = f(model_twotheta_values)
     intensity_normalized = intensity_interpolated / np.max(intensity_interpolated)
     return intensity_normalized, np.max(intensity_interpolated)
 

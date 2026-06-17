@@ -19,6 +19,7 @@ try:
 except FileNotFoundError:
     wavenumbers = np.load('../data/processed/wavenumber_vals_v3.npy')
 n_out = len(wavenumbers)
+ir_wavenumbers = np.linspace(370,4000,266)
 
 base_args = {
     "model": "equivariant-transformer",
