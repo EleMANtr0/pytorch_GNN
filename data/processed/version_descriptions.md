@@ -1,0 +1,51 @@
+### v1
+    1228 pairs of structures and spectra
+    asymmetric unit only
+    edges between every pair of nodes
+    atoms sharing a site each get their own nodes
+    randomly pair Raman spectra with crystal structures
+    include high-T and high-P crystal structures
+    the 61 minerals for which we have at least 10 spectra and 10 structures (except diamond)
+    feature vectors x are [atomic_number,atomic_weight,electronegativity,occ,Biso]
+    intending to copy https://github.com/pyg-team/pytorch_geometric/blob/master/examples/qm9_pretrained_schnet.py
+    raman spectra are interpolated to wavenumbers in np.arange(1000.0,500.0,-10.0) (length 50)
+
+### v2
+    1491 pairs of structures and spectra
+    the 94 minerals for which we have at least 5 spectra and 5 structures (except diamond and sulphur)
+    raman spectra are interpolated to wavenumbers in data/processed/wavenumber_vals_v2.npy (length 1062)
+
+### v3
+    2794 pairs of structures and spectra
+    the 278 minerals for which we have at least 1 spectrum and 1 structure (except diamond, sulphur, and silicon)
+    raman spectra are interpolated to wavenumbers in data/processed/wavenumber_vals_v3.npy (length 266, every 4th of v2)
+    added "unrated" quality Raman spectra
+    added mineral names to graphs
+
+### v4
+    2875 pairs of structures and spectra
+    295 minerals
+    cutoff distance 10 Angstroms
+### v5
+    same, new features
+
+### v6
+    include more wavelenghts:
+    532    3437
+    514    2875
+    780    2396
+    785    1233
+### v7
+    cutoff 1e-8 to 8.0 Angstroms
+    532    3821
+    514    3018
+    780    2660
+    785    1368
+v8
+    added ir spectra: total 824 accessible
+| wl | n_raman | n_minerals | n_ir |
+| :--- | :--- | :--- | :--- |
+| 5.14 | 10902 | 314 | 9946 |
+| 5.32 | 5762 | 1702 | 2409 |
+| 7.80 | 3790 | 1246 | 1633 |
+| 7.85 | 1735 | 748 | 692 |
